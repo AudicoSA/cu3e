@@ -101,6 +101,10 @@ export async function POST(req: Request) {
       ageBand === 'little'
         ? `You are talking to ${childName}, ${ageLabel}${gradeLabel}. Match their level: short words, gentler tone, playful. One idea per sentence.`
         : `You are talking to ${childName}, ${ageLabel}${gradeLabel}. Talk like a smart older friend — direct, curious, a little dry. Trust them.`,
+    // Phase C — these are embedded in the agent system prompt so our custom LLM
+    // endpoint can identify the child without a user session.
+    child_id: requestedChildId ?? '',
+    parent_id: user.id,
   };
 
   // --- Get signed URL from ElevenLabs ---
