@@ -64,7 +64,7 @@ export default async function Login({
               <input type="checkbox" style={{ accentColor: "var(--violet)" }} />
               Remember me
             </label>
-            <a href="#" style={{ color: "var(--violet)" }}>Forgot password?</a>
+            <a href="/forgot-password" style={{ color: "var(--violet)" }}>Forgot password?</a>
           </div>
 
           <button

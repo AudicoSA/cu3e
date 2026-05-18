@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
 
 import { createClient } from '@/utils/supabase/server'
 
@@ -53,6 +54,50 @@ export async function logout() {
   const supabase = await createClient()
   await supabase.auth.signOut()
   redirect('/login')
+}
+
+// Sends a Supabase password-reset email. The link in the email points back
+// at /reset-password on whichever origin this request came from — so it works
+// from both localhost and the production Vercel URL without hard-coding.
+export async function requestPasswordReset(formData: FormData) {
+  const supabase = await createClient()
+  const email = (formData.get('email') as string)?.trim()
+  if (!email) {
+    redirect('/forgot-password?error=' + encodeURIComponent('Enter your email.'))
+  }
+
+  const hdrs = await headers()
+  const host = hdrs.get('x-forwarded-host') ?? hdrs.get('host')
+  const proto = hdrs.get('x-forwarded-proto') ?? 'https'
+  const origin = host ? `${proto}://${host}` : ''
+
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${origin}/reset-password`,
+  })
+
+  // We always show the success state — never reveal whether the email exists.
+  if (error) console.error('[auth] resetPasswordForEmail:', error.message)
+
+  redirect('/forgot-password?sent=1')
+}
+
+// Finalises a password reset. The user gets here after clicking the email link,
+// which exchanges the token for a session via the auth callback (Supabase SSR
+// handles that). At this point they're authenticated and can set a new password.
+export async function updatePassword(formData: FormData) {
+  const supabase = await createClient()
+  const password = formData.get('password') as string
+  if (!password || password.length < 8) {
+    redirect('/reset-password?error=' + encodeURIComponent('Password must be at least 8 characters.'))
+  }
+
+  const { error } = await supabase.auth.updateUser({ password })
+  if (error) {
+    redirect('/reset-password?error=' + encodeURIComponent(error.message))
+  }
+
+  revalidatePath('/', 'layout')
+  redirect('/dashboard')
 }
 
 export async function addChild(formData: FormData) {
