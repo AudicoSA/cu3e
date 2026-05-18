@@ -61,11 +61,30 @@ export async function POST(req: Request) {
         object: 'chat.completion.chunk',
         created,
         model: modelName,
-        choices: [{ index: 0, delta, finish_reason }],
+        system_fingerprint: null,
+        choices: [{ index: 0, delta, finish_reason, logprobs: null }],
+      });
+      // Final usage chunk — OpenAI emits this when stream_options.include_usage
+      // is true. ElevenLabs's accounting reads from this; without it they
+      // report `model_usage: {}` and treat the response as failed.
+      const usageChunk = (promptTokens: number, completionTokens: number) => ({
+        id,
+        object: 'chat.completion.chunk',
+        created,
+        model: modelName,
+        system_fingerprint: null,
+        choices: [],
+        usage: {
+          prompt_tokens: promptTokens,
+          completion_tokens: completionTokens,
+          total_tokens: promptTokens + completionTokens,
+        },
       });
       const finishWith = (text: string | null) => {
         if (text) send(chunk({ content: text }));
         send(chunk({}, 'stop'));
+        // Best-effort estimate when we can't get real usage (early error paths)
+        send(usageChunk(50, text ? Math.ceil(text.length / 4) : 1));
         controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         controller.close();
       };
@@ -208,8 +227,16 @@ export async function POST(req: Request) {
           send(chunk({ content: delta }));
         }
 
-        // 6. Done
+        // 6. Done — send finish + usage chunks (ElevenLabs reads usage to
+        // confirm the call generated tokens; missing usage = "no response").
         send(chunk({}, 'stop'));
+        try {
+          const usage = await result.usage;
+          send(usageChunk(usage.inputTokens ?? 0, usage.outputTokens ?? 0));
+        } catch {
+          // Fallback if usage isn't available — better than no usage chunk at all
+          send(usageChunk(50, 50));
+        }
         controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         controller.close();
       } catch (err) {
