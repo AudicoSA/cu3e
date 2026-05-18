@@ -1,6 +1,7 @@
-import { streamText, type ModelMessage } from 'ai';
+import { streamText, generateText, type ModelMessage } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { createServerClient, type CookieMethodsServerDeprecated } from '@supabase/ssr';
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { randomUUID } from 'node:crypto';
 
@@ -77,6 +78,8 @@ export async function POST(req: Request) {
   const curriculumFiles: CurriculumFile[] = [];
   const trace: string[] = [`mode:${mode}`];
   let child: ChildRow | null = null;
+  let activeDocId: string | null = null;
+  let activeDocExtractedText: string | null = null;
 
   if (!user) {
     trace.push('no-auth');
@@ -104,7 +107,7 @@ export async function POST(req: Request) {
       if (mode === 'tutor') {
         const { data: docs, error: docErr } = await supabase
           .from('curriculum_documents')
-          .select('storage_path, filename, created_at')
+          .select('id, storage_path, filename, created_at, extracted_text, question_count')
           .eq('child_id', child.id)
           .eq('is_active', true)
           .order('created_at', { ascending: false });
@@ -120,6 +123,12 @@ export async function POST(req: Request) {
             return true;
           });
           trace.push(`docs:${docs.length} unique:${uniqueDocs.length}`);
+
+          // The "active" doc for progress tracking is the most recent active one.
+          if (uniqueDocs[0]) {
+            activeDocId = uniqueDocs[0].id as string;
+            activeDocExtractedText = (uniqueDocs[0].extracted_text as string | null) ?? null;
+          }
 
           for (const doc of uniqueDocs) {
             const { data: fileData, error: dlErr } = await supabase.storage
@@ -179,6 +188,30 @@ export async function POST(req: Request) {
     if (insErr) console.error('[chat] persist user msg failed:', insErr.message);
   }
 
+  // Fire-and-forget Haiku grader: decide whether the child's most recent
+  // reply correctly answered a labelled question from the active worksheet.
+  // Runs in parallel with the main Sonnet stream so it never blocks Echo.
+  if (
+    mode === 'tutor' &&
+    user && child &&
+    activeDocId && activeDocExtractedText && lastUserText.trim()
+  ) {
+    const lastAssistantText = [...coreMessages]
+      .reverse()
+      .find((m) => m.role === 'assistant');
+    const echoLast =
+      typeof lastAssistantText?.content === 'string' ? lastAssistantText.content : '';
+    void runGrader({
+      childId: child.id,
+      parentId: user.id,
+      docId: activeDocId,
+      conversationId,
+      curriculumText: activeDocExtractedText,
+      echoLast,
+      childReply: lastUserText,
+    });
+  }
+
   const systemPrompt = buildSystemPrompt(mode, child);
 
   const result = streamText({
@@ -201,6 +234,86 @@ export async function POST(req: Request) {
   });
 
   return result.toUIMessageStreamResponse();
+}
+
+// ---------------------------------------------------------------------------
+// Grader — decides whether the child's last reply correctly answered a
+// labelled curriculum question. Cheap Haiku call, fire-and-forget.
+// ---------------------------------------------------------------------------
+
+async function runGrader(args: {
+  childId: string;
+  parentId: string;
+  docId: string;
+  conversationId: string;
+  curriculumText: string;
+  echoLast: string;
+  childReply: string;
+}) {
+  const { childId, parentId, docId, conversationId, curriculumText, echoLast, childReply } = args;
+
+  // Cap the curriculum we send to Haiku — anything past 8K chars rarely changes
+  // a grading decision and keeps the call snappy + cheap.
+  const truncatedCurriculum =
+    curriculumText.length > 8000 ? curriculumText.slice(0, 8000) + '\n…[truncated]' : curriculumText;
+
+  const prompt = `You are grading a child's homework conversation.
+
+CURRICULUM (the worksheet they're working through):
+${truncatedCurriculum}
+
+ECHO (the AI tutor) last said:
+${echoLast || '(no previous turn)'}
+
+The child just replied:
+${childReply}
+
+Did the child's reply CORRECTLY answer one specific labelled question from the curriculum? Question labels look like "a", "b", "1", "2", "Qa", "Q1" etc. Be strict — count only confident, complete correct answers. If the child is just thinking aloud, asking a question back, or partially right, return false.
+
+Output ONLY a JSON object on a single line with no other text:
+{"question_label": "<label or null>", "correct": true|false}`;
+
+  let parsed: { question_label: string | null; correct: boolean } | null = null;
+  try {
+    const { text } = await generateText({
+      model: anthropic('claude-haiku-4-5-20251001'),
+      messages: [{ role: 'user', content: prompt }],
+      maxRetries: 1,
+    });
+    const match = /\{[^{}]*"correct"[^{}]*\}/.exec(text.trim());
+    if (match) parsed = JSON.parse(match[0]);
+  } catch (e) {
+    console.warn('[grader] call failed:', e instanceof Error ? e.message : String(e));
+    return;
+  }
+
+  if (!parsed || !parsed.correct || !parsed.question_label) return;
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) {
+    console.warn('[grader] missing supabase admin env');
+    return;
+  }
+  const admin = createSupabaseAdmin(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  // Upsert on (child_id, curriculum_document_id, question_label) — the unique
+  // constraint stops us double-counting the same question.
+  const { error } = await admin.from('curriculum_progress').insert({
+    child_id: childId,
+    parent_id: parentId,
+    curriculum_document_id: docId,
+    question_label: parsed.question_label,
+    conversation_id: conversationId,
+  });
+  // 23505 = unique violation = already counted. Anything else logs.
+  if (error && error.code !== '23505') {
+    console.error('[grader] insert failed:', error.message);
+  } else if (!error) {
+    console.log('[grader] correct:', parsed.question_label, 'for child', childId);
+  }
 }
 
 // ---------------------------------------------------------------------------

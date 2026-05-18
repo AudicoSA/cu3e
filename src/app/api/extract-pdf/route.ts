@@ -100,11 +100,17 @@ Output format:
     return Response.json({ error: 'claude returned empty text' }, { status: 500 });
   }
 
+  // Count labelled questions from the extraction so the in-chat progress
+  // bar knows what 100% looks like for this PDF. Our prompt writes each
+  // question as `Qa:` / `Q1:` etc., so matching that pattern catches them all.
+  const questionCount = countQuestions(extractedText);
+
   const { error: updErr } = await admin
     .from('curriculum_documents')
     .update({
       extracted_text: extractedText,
       extracted_at: new Date().toISOString(),
+      question_count: questionCount,
     })
     .eq('id', documentId);
   if (updErr) {
@@ -116,5 +122,18 @@ Output format:
     document_id: documentId,
     filename: docRow.filename,
     text_length: extractedText.length,
+    question_count: questionCount,
   });
+}
+
+// Extracts distinct `Q<label>:` markers from our structured extraction so we
+// can use the count as the denominator for the in-chat progress bar.
+function countQuestions(text: string): number {
+  const labels = new Set<string>();
+  const re = /\bQ([0-9a-zA-Z]{1,3})\s*[:.)]/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    labels.add(m[1].toLowerCase());
+  }
+  return labels.size;
 }

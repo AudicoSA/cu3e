@@ -101,6 +101,10 @@ export default function StudyHub() {
   const [uploadFilename, setUploadFilename] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Progress bar at top of chat. The "active" doc is the most recent one;
+  // we compare distinct correct-answer rows against its question_count.
+  const [progress, setProgress] = useState<{ answered: number; total: number; docFilename: string } | null>(null);
+
   // Curriculum library (shared catalog)
   const [library, setLibrary] = useState<LibraryPack[]>([]);
   const [activatingId, setActivatingId] = useState<string | null>(null);
@@ -171,6 +175,42 @@ export default function StudyHub() {
       cancelled = true;
     };
   }, [supabase, selectedChildId]);
+
+  // Per-curriculum progress: distinct correct answers for the most-recent
+  // active doc. The grader writes rows server-side after each child reply,
+  // so we re-fetch a few times after each user message to catch the result.
+  const fetchProgress = useCallback(async () => {
+    if (!selectedChildId) {
+      setProgress(null);
+      return;
+    }
+    const { data: docs } = await supabase
+      .from('curriculum_documents')
+      .select('id, filename, question_count')
+      .eq('child_id', selectedChildId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const activeDoc = (docs as { id: string; filename: string; question_count: number | null }[] | null)?.[0];
+    if (!activeDoc || !activeDoc.question_count) {
+      setProgress(null);
+      return;
+    }
+    const { count } = await supabase
+      .from('curriculum_progress')
+      .select('id', { count: 'exact', head: true })
+      .eq('child_id', selectedChildId)
+      .eq('curriculum_document_id', activeDoc.id);
+    setProgress({
+      answered: count ?? 0,
+      total: activeDoc.question_count,
+      docFilename: activeDoc.filename,
+    });
+  }, [supabase, selectedChildId]);
+
+  useEffect(() => {
+    void fetchProgress();
+  }, [fetchProgress, documents.length]);
 
   // Load the curriculum library catalogue once on mount.
   useEffect(() => {
@@ -273,6 +313,19 @@ export default function StudyHub() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sceneImages]);
+
+  // Refetch the in-chat progress bar whenever Echo finishes a reply in
+  // tutor mode. Grader runs in parallel with the stream so by this point it
+  // has usually saved. We also refetch after a 4s grace in case Haiku was
+  // slow to grade.
+  useEffect(() => {
+    if (mode !== 'tutor') return;
+    if (isLoading) return;
+    if (messages.length === 0) return;
+    void fetchProgress();
+    const t = window.setTimeout(() => void fetchProgress(), 4000);
+    return () => window.clearTimeout(t);
+  }, [isLoading, mode, messages.length, fetchProgress]);
 
   const selectedChild = children.find((c) => c.id === selectedChildId) ?? null;
 
@@ -574,6 +627,58 @@ export default function StudyHub() {
               {isLoading ? "Live" : "Ready"}
             </span>
           </div>
+
+          {/* Per-curriculum progress bar — only in tutor mode with an active PDF */}
+          {mode === 'tutor' && progress && progress.total > 0 && (
+            <div
+              style={{
+                padding: "8px 20px 12px",
+                borderBottom: "1px solid var(--border)",
+                background: "var(--surface)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                  marginBottom: 6,
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10.5,
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: "var(--ink-muted)",
+                  }}
+                >
+                  Worksheet progress
+                </span>
+                <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>
+                  {progress.answered} of {progress.total} done
+                </span>
+              </div>
+              <div
+                style={{
+                  height: 6,
+                  background: "var(--surface-2)",
+                  borderRadius: 3,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${Math.min(100, (progress.answered / progress.total) * 100)}%`,
+                    height: "100%",
+                    background: "linear-gradient(90deg, var(--violet, #8b5cf6), var(--cyan, #4ed8eb))",
+                    transition: "width 600ms ease",
+                  }}
+                />
+              </div>
+            </div>
+          )}
 
           {/* Messages */}
           <div
