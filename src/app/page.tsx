@@ -446,21 +446,50 @@ export default function Home() {
             </div>
 
             <div className="plan feature">
-              <span className="plan-tag">Most parents</span>
-              <h3>Family</h3>
-              <div className="plan-price">
-                <span className="amount">R499</span>
-                <span className="period">/ month</span>
+              <span className="plan-tag">Introductory</span>
+              <h3>Per child</h3>
+              <div className="plan-price" style={{ flexDirection: "column", alignItems: "flex-start", gap: 2 }}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-serif)",
+                    fontSize: 22,
+                    letterSpacing: "-0.02em",
+                    color: "var(--ink-muted)",
+                    textDecoration: "line-through",
+                    textDecorationColor: "rgba(255,255,255,0.4)",
+                    textDecorationThickness: "2px",
+                    lineHeight: 1,
+                  }}
+                >
+                  R799
+                </span>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                  <span className="amount">R499</span>
+                  <span className="period">/ child / month</span>
+                </div>
               </div>
+              <p
+                className="muted"
+                style={{
+                  fontSize: 12,
+                  margin: 0,
+                  fontFamily: "var(--font-mono)",
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  color: "var(--cyan)",
+                }}
+              >
+                Founder pricing · early-access only
+              </p>
               <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-                Everything for one household. Up to 4 kids. Less than a single tutoring hour.
+                Each child gets their own Echo — adapted to their age, curriculum, and pace.
               </p>
               <ul>
-                <li><Check /> Up to 4 child profiles</li>
+                <li><Check /> One personalised Echo per child</li>
                 <li><Check /> Unlimited tutor + storybook + AI skills</li>
-                <li><Check /> Weekly parent reports</li>
+                <li><Check /> Voice conversations (fair-use cap)</li>
+                <li><Check /> Weekly parent audio overview</li>
                 <li><Check /> Curriculum match (CAPS / CC / GCSE / IB)</li>
-                <li><Check /> Priority human support</li>
               </ul>
               <a href="/register" className="btn btn-violet">Start free trial <Arrow size={12} /></a>
             </div>
