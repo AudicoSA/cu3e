@@ -1,6 +1,7 @@
 import { streamText, type ModelMessage } from 'ai';
 import { openai } from '@ai-sdk/openai';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 
 export const maxDuration = 60;
 
@@ -98,7 +99,7 @@ export async function POST(req: Request) {
 
         type Child = { id: string; first_name: string; age: number | null; grade: string | null };
         let child: Child | null = null;
-        const curriculumFiles: Array<{ filename: string; data: Buffer }> = [];
+        const curriculumTexts: Array<{ filename: string; text: string }> = [];
         const trace: string[] = [];
 
         if (!childId) {
@@ -143,22 +144,37 @@ export async function POST(req: Request) {
                 return true;
               });
 
+              // Download + extract text in parallel. Extracting text server-side
+              // (via pdf-parse) and inlining it as text in the system prompt is
+              // 5-10x faster than attaching the binary and letting OpenAI's
+              // vision pipeline render every page. Image-based PDFs return
+              // near-empty text and we note that in the trace.
               const downloads = await Promise.all(
                 unique.map(async (doc) => {
-                  const { data: fileData, error: dlErr } = await supabase.storage
-                    .from('curriculum')
-                    .download(doc.storage_path);
-                  if (dlErr || !fileData) return { err: doc.filename };
-                  const buffer = Buffer.from(await fileData.arrayBuffer());
-                  return { ok: { filename: doc.filename, data: buffer } };
+                  try {
+                    const { data: fileData, error: dlErr } = await supabase.storage
+                      .from('curriculum')
+                      .download(doc.storage_path);
+                    if (dlErr || !fileData) return { err: doc.filename, kind: 'dl' };
+                    const buffer = Buffer.from(await fileData.arrayBuffer());
+                    const parsed = await pdfParse(buffer);
+                    const text = (parsed.text ?? '').replace(/\s+\n/g, '\n').trim();
+                    return { ok: { filename: doc.filename, text, bytes: buffer.length } };
+                  } catch (e) {
+                    return { err: doc.filename, kind: 'parse', msg: e instanceof Error ? e.message : String(e) };
+                  }
                 })
               );
 
               for (const d of downloads) {
-                if ('err' in d) trace.push(`dl-err:${d.err}`);
-                else if (d.ok) {
-                  curriculumFiles.push(d.ok);
-                  trace.push(`attached:${d.ok.filename}:${d.ok.data.length}b`);
+                if ('err' in d) {
+                  trace.push(`${d.kind}-err:${d.err}`);
+                } else if (d.ok) {
+                  // Cap each PDF's text at 6000 chars — keeps token cost
+                  // reasonable and fits inside an ElevenLabs Custom LLM call.
+                  const text = d.ok.text.length > 6000 ? d.ok.text.slice(0, 6000) + '\n…[truncated]' : d.ok.text;
+                  curriculumTexts.push({ filename: d.ok.filename, text });
+                  trace.push(`text:${d.ok.filename}:${text.length}c/${d.ok.bytes}b`);
                 }
               }
             }
@@ -167,30 +183,11 @@ export async function POST(req: Request) {
 
         console.log('[voice-llm] pipeline:', trace.join(' | '));
 
-        // 4. Build our system prompt + forward conversation history
-        const systemPrompt = buildVoiceSystemPrompt(child);
+        // 4. Build our system prompt with inlined curriculum text + forward history
+        const systemPrompt = buildVoiceSystemPrompt(child, curriculumTexts);
         const history: ModelMessage[] = incoming
           .filter((m) => m.role !== 'system')
           .map((m) => ({ role: m.role, content: m.content }));
-
-        // Attach PDFs to latest user turn
-        if (curriculumFiles.length > 0) {
-          for (let i = history.length - 1; i >= 0; i--) {
-            const msg = history[i];
-            if (msg.role !== 'user') continue;
-            const userText = typeof msg.content === 'string' ? msg.content : '';
-            msg.content = [
-              { type: 'text', text: userText },
-              ...curriculumFiles.map((f) => ({
-                type: 'file' as const,
-                data: f.data,
-                mediaType: 'application/pdf',
-                filename: f.filename,
-              })),
-            ];
-            break;
-          }
-        }
 
         // 5. Stream OpenAI completion.
         // maxOutputTokens caps Echo at ~2-3 sentences of voice — fast AND on-brand
@@ -255,7 +252,10 @@ function ageBand(age: number | null | undefined): 'little' | 'big' {
   return 'big';
 }
 
-function buildVoiceSystemPrompt(child: { first_name: string; age: number | null; grade: string | null } | null): string {
+function buildVoiceSystemPrompt(
+  child: { first_name: string; age: number | null; grade: string | null } | null,
+  curriculumTexts: Array<{ filename: string; text: string }>
+): string {
   const name = child?.first_name ?? 'the child';
   const age = child?.age ?? null;
   const grade = child?.grade ?? null;
@@ -267,6 +267,22 @@ function buildVoiceSystemPrompt(child: { first_name: string; age: number | null;
     band === 'little'
       ? `${name} is ${ageLabel}${gradeLabel}. Match their level: short words, gentler tone, playful. One idea per sentence.`
       : `${name} is ${ageLabel}${gradeLabel}. Talk like a smart older friend — direct, curious, a little dry. Trust them.`;
+
+  // Build curriculum block — only include PDFs with meaningful extracted text
+  // (image-based PDFs return near-empty text from pdf-parse and just clutter
+  // the prompt without value).
+  const usableCurriculum = curriculumTexts.filter((c) => c.text && c.text.trim().length > 80);
+  let curriculumBlock = '';
+  if (usableCurriculum.length > 0) {
+    curriculumBlock = `\n\nCURRICULUM ${name.toUpperCase()} IS WORKING ON (extracted from their uploaded PDFs):
+
+${usableCurriculum.map((c) => `--- ${c.filename} ---\n${c.text}`).join('\n\n')}
+
+You CAN reference specific problems, rules, examples and numbers from the curriculum above when ${name} asks about their homework. Refer to them naturally — "you've got 3/4 plus 1/2 in question 2, right?" — not by quoting verbatim.`;
+  } else if (curriculumTexts.length > 0) {
+    // We have PDFs but they're image-based / un-extractable
+    curriculumBlock = `\n\nNOTE: ${name} has uploaded homework PDFs but they're image-based and you can't read the text directly. If they ask about a specific problem, ask them to read it aloud to you first, then guide them from there.`;
+  }
 
   return `You are Echo, an AI tutor on CU3E. The child is talking to you with their voice — they hear you, they speak to you. This is a real conversation, not text.
 
@@ -280,12 +296,6 @@ VOICE RULES:
 - No formatting cues out loud — no "bullet point", no "first second third". Just talk.
 - End almost every turn with a question or invitation back to ${name}.
 
-WHEN A HOMEWORK PDF IS ATTACHED:
-- You can read it directly. Refer to specific problems and rules from it.
-- Never just solve problems on the page. Use them as anchors for questions.
-- Reference numbers and shapes from the page out loud ("you've got 3 plus a half there, right?").
-- If the PDF is image-based, describe what you see in plain words ${name} can picture.
-
 NEVER:
 - Give a straight homework answer, even when begged.
 - Lecture or list facts at them.
@@ -296,5 +306,5 @@ CLOSING:
 If ${name} wraps up or says goodbye, give a short warm sign-off with one quick encouragement.
 
 SUBLIMINAL AI-LITERACY WEAVING (light touch, not every turn):
-When the homework topic naturally relates to how AI works — patterns, learning, mistakes, classification — drop in ONE short connection in passing. Never lecture. If there's no hook, skip it.`;
+When the homework topic naturally relates to how AI works — patterns, learning, mistakes, classification — drop in ONE short connection in passing. Never lecture. If there's no hook, skip it.${curriculumBlock}`;
 }
