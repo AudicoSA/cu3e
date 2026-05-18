@@ -17,30 +17,22 @@ type IncomingBody = {
 };
 
 // ---- Endpoint -----------------------------------------------------------
-// Custom LLM called by ElevenLabs Conversational AI. We proxy DIRECTLY to
-// OpenAI's chat.completions stream — that way the response is bit-for-bit
-// identical to OpenAI's real output (which ElevenLabs already parses every
-// day). No reformatting, no chance of "Brain returned no response" because
-// of a missing field or quirky encoding.
+// Custom LLM called by ElevenLabs Conversational AI. EL takes the configured
+// URL as a BASE and appends a path like `/chat/completions` or `/v1/chat/
+// completions` — so this route lives under an optional catch-all
+// `[[...path]]` segment to match the base URL AND any sub-path EL throws at it.
 //
-// What we do server-side before proxying:
-//   1. Authenticate via shared secret (bearer token)
-//   2. Parse [CU3E_META] block from the system prompt to recover child_id
-//   3. Load the child + their active curriculum PDFs from Supabase
-//   4. Extract PDF text via pdf-parse (much faster than OpenAI vision)
-//   5. Replace ElevenLabs's bare system prompt with our voice-tuned Echo
-//      system prompt that has the curriculum text inlined
-//   6. Forward the conversation history as-is and pipe OpenAI's response
-//      stream straight back to ElevenLabs
+// We proxy DIRECTLY to OpenAI's chat.completions stream so the response is
+// bit-for-bit identical to OpenAI's real output (which ElevenLabs already
+// parses every day). No reformatting, no surprise.
 export async function POST(req: Request) {
-  // DIAGNOSTIC: log every incoming header so we can see what ElevenLabs sends.
-  // Auth is currently permissive — we WARN on missing/bad token but don't block.
-  // Once we confirm ElevenLabs is sending the Bearer correctly, re-enable strict mode.
   const startedAt = Date.now();
   const expected = process.env.VOICE_LLM_SHARED_SECRET;
   const auth = req.headers.get('authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
   const ua = req.headers.get('user-agent') ?? '';
+  const reqUrl = new URL(req.url);
+  const reqPath = reqUrl.pathname;
   const headerEntries: Record<string, string> = {};
   for (const [k, v] of req.headers.entries()) {
     if (k.toLowerCase() === 'authorization') {
@@ -54,7 +46,7 @@ export async function POST(req: Request) {
       : !expected ? 'no-expected-env'
         : token === expected ? 'ok'
           : `mismatch(len=${token.length}/${expected.length})`;
-  console.log('[voice-llm] inbound', JSON.stringify({ ua, headerKeys: Object.keys(headerEntries).join(','), tokenStatus }));
+  console.log('[voice-llm] inbound', JSON.stringify({ path: reqPath, ua, headerKeys: Object.keys(headerEntries).join(','), tokenStatus }));
 
   const openaiKey = process.env.OPENAI_API_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -70,23 +62,20 @@ export async function POST(req: Request) {
     bodyRaw = await req.text();
     body = JSON.parse(bodyRaw) as IncomingBody;
   } catch {
-    // Even on parse failure, write the telemetry blob so we can see what arrived
     fireAndForgetDiag({
       supabaseUrl,
       serviceKey,
-      payload: { stage: 'bad-json', ua, headers: headerEntries, tokenStatus, bodyPreview: bodyRaw.slice(0, 2000), elapsedMs: Date.now() - startedAt },
+      payload: { stage: 'bad-json', path: reqPath, ua, headers: headerEntries, tokenStatus, bodyPreview: bodyRaw.slice(0, 2000), elapsedMs: Date.now() - startedAt },
     });
     return Response.json({ error: 'bad json' }, { status: 400 });
   }
 
-  // Tap: every inbound request gets a small JSON blob written to Supabase
-  // Storage so we can confirm IF ElevenLabs is actually hitting us, and SEE
-  // exactly what it sends.
   fireAndForgetDiag({
     supabaseUrl,
     serviceKey,
     payload: {
       stage: 'inbound',
+      path: reqPath,
       ua,
       headers: headerEntries,
       tokenStatus,
@@ -102,14 +91,10 @@ export async function POST(req: Request) {
     return Response.json({ error: 'no messages' }, { status: 400 });
   }
 
-  // 1. Parse meta from ElevenLabs' interpolated system prompt
   const meta = parseMeta(incoming[0]?.content ?? '');
   const childId = meta.child_id;
   console.log('[voice-llm] start child_id:', childId);
 
-  // 2. Load child + curriculum (this happens BEFORE we open the OpenAI stream,
-  //    but it's fast — Supabase calls in parallel, PDF text extraction is
-  //    server-side. Total prep typically ~1s.)
   const supabase = createSupabaseClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
@@ -195,17 +180,12 @@ export async function POST(req: Request) {
 
   console.log('[voice-llm] pipeline:', trace.join(' | '));
 
-  // 3. Build the messages array we'll forward to OpenAI:
-  //    - Replace ElevenLabs's bare system prompt with our voice-tuned Echo prompt
-  //    - Keep the conversation history untouched
   const systemPrompt = buildVoiceSystemPrompt(child, curriculumTexts);
   const outgoingMessages: IncomingMessage[] = [
     { role: 'system', content: systemPrompt },
     ...incoming.filter((m) => m.role !== 'system'),
   ];
 
-  // 4. Call OpenAI directly. Stream goes back through us unchanged — exact
-  //    OpenAI Chat Completions chunk format that ElevenLabs is built to parse.
   const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -231,7 +211,6 @@ export async function POST(req: Request) {
     );
   }
 
-  // 5. Pipe straight through. No translation, no reformatting.
   return new Response(upstream.body, {
     headers: {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -244,8 +223,6 @@ export async function POST(req: Request) {
 
 // ---- Helpers -----------------------------------------------------------
 
-// Tap: upload a small JSON blob to the `curriculum` bucket under _voice_debug/.
-// Fire-and-forget — we never block the actual LLM response on this.
 function fireAndForgetDiag(args: {
   supabaseUrl: string;
   serviceKey: string;
