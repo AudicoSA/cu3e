@@ -1,0 +1,1069 @@
+"use client";
+
+import Image from "next/image";
+import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport, type UIMessage } from "ai";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { createBrowserClient } from "@supabase/ssr";
+import VoiceTalk from "../components/VoiceTalk";
+
+type Child = {
+  id: string;
+  first_name: string;
+  age: number | null;
+  grade: string | null;
+};
+
+type CurriculumDoc = {
+  id: string;
+  filename: string;
+  storage_path: string;
+  is_active: boolean;
+  child_id: string;
+};
+
+type LibraryPack = {
+  id: string;
+  region: string;
+  grade: string | null;
+  subject: string;
+  title: string;
+  description: string | null;
+  storage_path: string;
+  source_attribution: string | null;
+};
+
+type Mode = "tutor" | "storybook" | "skills";
+
+const CHILD_STORAGE_KEY = "cu3e.selectedChildId";
+const MODE_STORAGE_KEY = "cu3e.mode";
+
+const TUTOR_INTRO = {
+  title: "Tutor mode",
+  body: "Drop a homework PDF in the sidebar, or just type what you're stuck on. Echo will help you think — not hand over the answer.",
+  prompts: [
+    "Help me with my Patterns homework",
+    "I don't get this problem",
+    "Quiz me on what I just read",
+  ],
+};
+
+const STORYBOOK_INTRO = {
+  title: "Storybook mode",
+  body: "You're the author. Echo's your sidekick. Tell me what kind of story you want to write — or just give me a character and we'll start.",
+  prompts: [
+    "Write a story about a dragon who's scared of broccoli",
+    "Help me make a mystery in a school cafeteria",
+    "A robot wakes up in a forest. What happens?",
+  ],
+};
+
+const SKILLS_INTRO = {
+  title: "AI Skills",
+  body: "Pick a topic from the Skills page, or ask Echo anything about how AI actually works.",
+  prompts: [
+    "How does AI guess what's in a picture?",
+    "Why does AI sometimes make stuff up?",
+    "Show me an example of AI being wrong",
+  ],
+};
+
+const INTROS: Record<Mode, typeof TUTOR_INTRO> = {
+  tutor: TUTOR_INTRO,
+  storybook: STORYBOOK_INTRO,
+  skills: SKILLS_INTRO,
+};
+
+export default function StudyHub() {
+  const supabase = useMemo(
+    () =>
+      createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      ),
+    []
+  );
+
+  // Children + selection
+  const [children, setChildren] = useState<Child[]>([]);
+  const [selectedChildId, setSelectedChildId] = useState<string | null>(null);
+  const [mode, setMode] = useState<Mode>("tutor");
+
+  // Documents for current child
+  const [documents, setDocuments] = useState<CurriculumDoc[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Curriculum library (shared catalog)
+  const [library, setLibrary] = useState<LibraryPack[]>([]);
+  const [activatingId, setActivatingId] = useState<string | null>(null);
+
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const urlMode = searchParams?.get("mode");
+  const urlPrompt = searchParams?.get("prompt");
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (urlMode === "tutor" || urlMode === "storybook" || urlMode === "skills") {
+      setMode(urlMode);
+    } else {
+      const storedMode = (typeof window !== "undefined" && localStorage.getItem(MODE_STORAGE_KEY)) as Mode | null;
+      if (storedMode === "tutor" || storedMode === "storybook" || storedMode === "skills") setMode(storedMode);
+    }
+    if (urlPrompt) setPendingPrompt(urlPrompt);
+    if (urlMode || urlPrompt) {
+      router.replace("/study-hub");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Load children
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase
+        .from("children")
+        .select("id, first_name, age, grade")
+        .eq("parent_id", user.id)
+        .order("created_at", { ascending: true });
+      if (cancelled || !data) return;
+      const list = data as Child[];
+      setChildren(list);
+
+      const stored = typeof window !== "undefined" ? localStorage.getItem(CHILD_STORAGE_KEY) : null;
+      const found = stored && list.find((c) => c.id === stored);
+      setSelectedChildId(found ? found.id : list[0]?.id ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  // Load documents
+  useEffect(() => {
+    if (!selectedChildId) {
+      setDocuments([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("curriculum_documents")
+        .select("id, filename, storage_path, is_active, child_id")
+        .eq("child_id", selectedChildId)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false });
+      if (cancelled) return;
+      setDocuments((data as CurriculumDoc[]) || []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, selectedChildId]);
+
+  // Load the curriculum library catalogue once on mount.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("curriculum_library")
+        .select("id, region, grade, subject, title, description, storage_path, source_attribution")
+        .eq("is_published", true)
+        .order("region", { ascending: true });
+      if (cancelled || !data) return;
+      setLibrary(data as LibraryPack[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase]);
+
+  // Activate a library pack — copies the metadata into curriculum_documents
+  // pointing at the shared storage path. Then refreshes the active documents.
+  const activateLibraryPack = useCallback(
+    async (pack: LibraryPack) => {
+      if (!selectedChildId || activatingId) return;
+      // Skip if already active for this child
+      if (documents.some((d) => d.storage_path === pack.storage_path)) return;
+
+      setActivatingId(pack.id);
+      try {
+        const filename = `${pack.region} · ${pack.grade ? pack.grade + " · " : ""}${pack.title}.pdf`;
+        const { error: insErr } = await supabase.from("curriculum_documents").insert({
+          child_id: selectedChildId,
+          filename,
+          storage_path: pack.storage_path,
+          is_active: true,
+        });
+        if (insErr) throw insErr;
+
+        const { data } = await supabase
+          .from("curriculum_documents")
+          .select("id, filename, storage_path, is_active, child_id")
+          .eq("child_id", selectedChildId)
+          .eq("is_active", true)
+          .order("created_at", { ascending: false });
+        if (data) setDocuments(data as CurriculumDoc[]);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[library] activation failed:", msg);
+        alert("Couldn't add this pack: " + msg);
+      } finally {
+        setActivatingId(null);
+      }
+    },
+    [supabase, selectedChildId, activatingId, documents]
+  );
+
+  const onChooseChild = useCallback((id: string) => {
+    setSelectedChildId(id);
+    if (typeof window !== "undefined") localStorage.setItem(CHILD_STORAGE_KEY, id);
+  }, []);
+  const onChooseMode = useCallback((m: Mode) => {
+    setMode(m);
+    if (typeof window !== "undefined") localStorage.setItem(MODE_STORAGE_KEY, m);
+  }, []);
+
+  const chatId = useMemo(() => {
+    if (!selectedChildId) return "";
+    return `${selectedChildId}-${mode}-${crypto.randomUUID()}`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedChildId, mode]);
+
+  const transport = useMemo(
+    () =>
+      new DefaultChatTransport({
+        api: "/api/chat",
+        body: () => ({
+          childId: selectedChildId ?? undefined,
+          mode,
+        }),
+      }),
+    [selectedChildId, mode]
+  );
+
+  const { messages, sendMessage, status, error, setMessages } = useChat({
+    id: chatId,
+    transport,
+  });
+
+  useEffect(() => {
+    setMessages([]);
+    setSceneImages({});
+  }, [chatId, setMessages]);
+
+  const [sceneImages, setSceneImages] = useState<Record<string, "loading" | "error" | string>>({});
+
+  const [input, setInput] = useState("");
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isLoading = status === "submitted" || status === "streaming";
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, sceneImages]);
+
+  const selectedChild = children.find((c) => c.id === selectedChildId) ?? null;
+
+  // Storybook image gen
+  useEffect(() => {
+    if (mode !== "storybook") return;
+    if (status === "streaming" || status === "submitted") return;
+    const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
+    if (!lastAssistant) return;
+    if (sceneImages[lastAssistant.id]) return;
+
+    const scene = lastAssistant.parts
+      ? lastAssistant.parts
+          .filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
+          .map((p) => p.text)
+          .join("")
+      : "";
+    if (!scene.trim()) return;
+
+    const storySoFar = messages
+      .filter((m) => m.id !== lastAssistant.id)
+      .map((m) =>
+        m.parts
+          ?.filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
+          .map((p) => p.text)
+          .join("") ?? ""
+      )
+      .join("\n");
+
+    setSceneImages((prev) => ({ ...prev, [lastAssistant.id]: "loading" }));
+
+    fetch("/api/story-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scene,
+        storySoFar,
+        age: selectedChild?.age ?? null,
+        mode: "storybook",
+      }),
+    })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(`status ${r.status}`);
+        return r.json();
+      })
+      .then((data) => {
+        if (typeof data?.image === "string") {
+          setSceneImages((prev) => ({ ...prev, [lastAssistant.id]: data.image }));
+        } else {
+          setSceneImages((prev) => ({ ...prev, [lastAssistant.id]: "error" }));
+        }
+      })
+      .catch((err) => {
+        console.warn("[storybook] image gen failed:", err);
+        setSceneImages((prev) => ({ ...prev, [lastAssistant.id]: "error" }));
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, status, mode]);
+
+  const send = useCallback(
+    (text: string) => {
+      if (!text.trim() || isLoading || !selectedChildId) return;
+      sendMessage({ text });
+      setInput("");
+    },
+    [isLoading, selectedChildId, sendMessage]
+  );
+
+  // Auto-send launch prompt
+  useEffect(() => {
+    if (!pendingPrompt) return;
+    if (!selectedChildId) return;
+    if (messages.length > 0) return;
+    send(pendingPrompt);
+    setPendingPrompt(null);
+  }, [pendingPrompt, selectedChildId, messages.length, send]);
+
+  // Auto-grade the conversation once it has enough turns. Server enforces
+  // uniqueness on conversation_id, so this is safe to fire more than once —
+  // we still gate locally to avoid wasted POSTs.
+  const gradedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!chatId || gradedRef.current.has(chatId)) return;
+    const userTurns = messages.filter((m) => m.role === "user").length;
+    if (userTurns < 3) return; // need a few exchanges before grading is meaningful
+    if (status !== "ready") return; // wait until streaming is done
+    gradedRef.current.add(chatId);
+    void fetch("/api/grade-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversationId: chatId }),
+    }).catch((err) => console.warn("[grade-session] fire-and-forget failed:", err));
+  }, [chatId, messages, status]);
+
+  const handleFileUpload = async (file: File) => {
+    if (!selectedChildId) {
+      alert("Pick a child first.");
+      return;
+    }
+    if (!file || file.type !== "application/pdf") {
+      alert("Please upload a valid PDF file.");
+      return;
+    }
+
+    setIsUploading(true);
+    try {
+      const fileName = `${selectedChildId}-${Date.now()}.pdf`;
+      const { error: uploadError } = await supabase.storage
+        .from("curriculum")
+        .upload(fileName, file);
+      if (uploadError) throw uploadError;
+
+      const { error: dbError } = await supabase.from("curriculum_documents").insert({
+        child_id: selectedChildId,
+        filename: file.name,
+        storage_path: fileName,
+        is_active: true,
+      });
+      if (dbError) throw dbError;
+
+      const { data } = await supabase
+        .from("curriculum_documents")
+        .select("id, filename, storage_path, is_active, child_id")
+        .eq("child_id", selectedChildId)
+        .eq("is_active", true)
+        .order("created_at", { ascending: false });
+      if (data) setDocuments(data as CurriculumDoc[]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      console.error(err);
+      alert("Upload failed: " + msg);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const renderText = (m: UIMessage) =>
+    m.parts
+      ? m.parts
+          .filter((p): p is Extract<typeof p, { type: "text" }> => p.type === "text")
+          .map((p) => p.text)
+          .join("")
+      : "";
+
+  const intro = INTROS[mode];
+
+  return (
+    <section className="container" style={{ padding: "56px 32px 96px", minHeight: "88vh", display: "flex", flexDirection: "column" }}>
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-end",
+          gap: 24,
+          flexWrap: "wrap",
+          paddingBottom: 32,
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        <div>
+          <span className="eyebrow">Study Hub</span>
+          <h1 className="h-section" style={{ marginTop: 12, fontSize: "clamp(32px, 4vw, 48px)" }}>
+            {mode === "tutor" && (
+              <>Build, <span className="serif-italic accent">don&apos;t copy.</span></>
+            )}
+            {mode === "storybook" && (
+              <>Make something, <span className="serif-italic accent">together.</span></>
+            )}
+            {mode === "skills" && (
+              <>How AI <span className="serif-italic accent">actually works.</span></>
+            )}
+          </h1>
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {children.length > 1 && selectedChildId && (
+            <select
+              value={selectedChildId}
+              onChange={(e) => onChooseChild(e.target.value)}
+              className="field"
+              style={{ maxWidth: 200, padding: "10px 12px", fontSize: 14, background: "var(--surface)" }}
+              aria-label="Choose child"
+            >
+              {children.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.first_name}
+                  {typeof c.age === "number" ? ` · ${c.age}` : ""}
+                </option>
+              ))}
+            </select>
+          )}
+
+          <ModeToggle mode={mode} onChange={onChooseMode} />
+
+          <button
+            type="button"
+            onClick={() => setVoiceOpen(true)}
+            disabled={!selectedChildId}
+            className="btn btn-violet"
+            style={{ opacity: selectedChildId ? 1 : 0.4, cursor: selectedChildId ? "pointer" : "not-allowed" }}
+            aria-label="Talk to Echo by voice"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+            Talk to Echo
+          </button>
+        </div>
+      </div>
+
+      <VoiceTalk
+        open={voiceOpen}
+        onClose={() => setVoiceOpen(false)}
+        childId={selectedChildId}
+      />
+
+      {/* Body */}
+      <div
+        className="hub-body"
+        style={{
+          marginTop: 32,
+          flex: 1,
+          display: "grid",
+          gridTemplateColumns: mode === "tutor" ? "minmax(0, 1fr) minmax(0, 2fr)" : "minmax(0, 1fr)",
+          gap: 20,
+        }}
+      >
+        {mode === "tutor" && (
+          <Sidebar
+            documents={documents}
+            isUploading={isUploading}
+            fileInputRef={fileInputRef}
+            onPickFile={() => fileInputRef.current?.click()}
+            onFileChange={(f) => f && handleFileUpload(f)}
+            library={library}
+            activatingId={activatingId}
+            onActivate={activateLibraryPack}
+          />
+        )}
+
+        {/* Chat */}
+        <section
+          className="chat"
+          style={{ maxHeight: "78vh", padding: 0 }}
+        >
+          {/* Header */}
+          <div className="chat-header" style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
+            <div className="avatar">
+              <Image src="/echo.png" alt="Echo" fill sizes="36px" style={{ objectFit: "cover" }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div className="chat-name">
+                Echo · {mode === "tutor" ? "tutor" : mode === "storybook" ? "story partner" : "AI guide"}
+                {selectedChild ? ` for ${selectedChild.first_name}` : ""}
+              </div>
+              <div className="chat-sub" style={{ marginTop: 2 }}>
+                {isLoading ? "Thinking…" : "Ready"}
+              </div>
+            </div>
+            <span className="pill">
+              <span
+                className="dot"
+                style={isLoading ? { background: "var(--amber)", boxShadow: "0 0 0 4px rgba(240,179,64,0.15)" } : undefined}
+              />
+              {isLoading ? "Live" : "Ready"}
+            </span>
+          </div>
+
+          {/* Messages */}
+          <div
+            className="chat-body"
+            style={{
+              padding: "24px 20px",
+              flex: 1,
+              overflowY: "auto",
+              gap: 20,
+            }}
+          >
+            {!selectedChildId ? (
+              <div style={{ margin: "auto", textAlign: "center", color: "var(--ink-muted)", fontSize: 14 }}>
+                No child selected. Add one in the dashboard first.
+              </div>
+            ) : messages.length === 0 ? (
+              <div style={{ margin: "auto", textAlign: "center", maxWidth: 440 }}>
+                <p style={{ fontFamily: "var(--font-serif)", fontSize: 26, color: "var(--ink-muted)", letterSpacing: "-0.01em" }}>
+                  {intro.title}
+                </p>
+                <p style={{ marginTop: 8, fontSize: 14, color: "var(--ink-muted)", lineHeight: 1.55 }}>
+                  {intro.body}
+                </p>
+                <div style={{ marginTop: 20, display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8 }}>
+                  {intro.prompts.map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => send(p)}
+                      disabled={isLoading}
+                      style={{
+                        borderRadius: 999,
+                        border: "1px solid var(--border-strong)",
+                        background: "var(--surface)",
+                        padding: "6px 14px",
+                        fontSize: 12.5,
+                        color: "var(--ink-muted)",
+                        cursor: isLoading ? "not-allowed" : "pointer",
+                        opacity: isLoading ? 0.5 : 1,
+                        fontFamily: "var(--font-sans)",
+                        transition: "color 150ms ease, border-color 150ms ease, background 150ms ease",
+                      }}
+                      onMouseOver={(e) => {
+                        if (!isLoading) {
+                          e.currentTarget.style.color = "var(--ink)";
+                          e.currentTarget.style.background = "var(--surface-2)";
+                        }
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.color = "var(--ink-muted)";
+                        e.currentTarget.style.background = "var(--surface)";
+                      }}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              messages.map((m) =>
+                m.role === "user" ? (
+                  <div key={m.id} className="bubble user">
+                    {renderText(m)}
+                  </div>
+                ) : (
+                  <div key={m.id} style={{ alignSelf: "flex-start", display: "flex", gap: 12, maxWidth: "88%" }}>
+                    <div
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: "50%",
+                        boxShadow: "0 0 0 1px var(--border-strong)",
+                        overflow: "hidden",
+                        position: "relative",
+                        flexShrink: 0,
+                        marginTop: 4,
+                      }}
+                    >
+                      <Image src="/echo.png" alt="" fill sizes="28px" style={{ objectFit: "cover" }} />
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+                      {mode === "storybook" && <SceneImage state={sceneImages[m.id]} />}
+                      <div className="bubble echo" style={{ maxWidth: "100%" }}>
+                        {renderText(m)}
+                      </div>
+                    </div>
+                  </div>
+                )
+              )
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Input */}
+          <div
+            style={{
+              borderTop: "1px solid var(--border)",
+              padding: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            {error && (
+              <div
+                style={{
+                  borderRadius: 8,
+                  border: "1px solid rgba(239,68,68,0.4)",
+                  background: "rgba(239,68,68,0.1)",
+                  color: "#fca5a5",
+                  fontSize: 12,
+                  padding: "8px 12px",
+                }}
+              >
+                {error.message}
+              </div>
+            )}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                send(input);
+              }}
+              style={{ position: "relative" }}
+            >
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                type="text"
+                disabled={isLoading || !selectedChildId}
+                className="field"
+                style={{ paddingRight: 48 }}
+                placeholder={
+                  mode === "tutor"
+                    ? "Pitch your idea to Echo…"
+                    : mode === "storybook"
+                    ? "What happens next?"
+                    : "Ask Echo about AI…"
+                }
+              />
+              <button
+                type="submit"
+                disabled={isLoading || !input.trim() || !selectedChildId}
+                style={{
+                  position: "absolute",
+                  right: 6,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  padding: 8,
+                  borderRadius: 8,
+                  background: "var(--violet)",
+                  color: "#0a0b10",
+                  border: "none",
+                  opacity: isLoading || !input.trim() || !selectedChildId ? 0.4 : 1,
+                  cursor: isLoading || !input.trim() || !selectedChildId ? "not-allowed" : "pointer",
+                  transition: "background 150ms ease",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                aria-label="Send"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="22" y1="2" x2="11" y2="13" />
+                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                </svg>
+              </button>
+            </form>
+          </div>
+        </section>
+      </div>
+
+      <style>{`
+        @media (max-width: 920px) {
+          .hub-body { grid-template-columns: 1fr !important; }
+        }
+      `}</style>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Subcomponents
+// ---------------------------------------------------------------------------
+
+function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  const opts: { value: Mode; label: string }[] = [
+    { value: "tutor", label: "Tutor" },
+    { value: "storybook", label: "Storybook" },
+    { value: "skills", label: "Skills" },
+  ];
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        border: "1px solid var(--border-strong)",
+        background: "var(--surface)",
+        padding: 3,
+        borderRadius: 10,
+      }}
+    >
+      {opts.map((o) => {
+        const active = o.value === mode;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => onChange(o.value)}
+            style={{
+              padding: "8px 16px",
+              fontSize: 13.5,
+              fontWeight: 500,
+              borderRadius: 7,
+              border: "none",
+              transition: "background 150ms ease, color 150ms ease",
+              background: active ? "var(--violet)" : "transparent",
+              color: active ? "#0a0b10" : "var(--ink-muted)",
+              cursor: "pointer",
+            }}
+            onMouseOver={(e) => {
+              if (!active) e.currentTarget.style.color = "var(--ink)";
+            }}
+            onMouseOut={(e) => {
+              if (!active) e.currentTarget.style.color = "var(--ink-muted)";
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Sidebar({
+  documents,
+  isUploading,
+  fileInputRef,
+  onPickFile,
+  onFileChange,
+  library,
+  activatingId,
+  onActivate,
+}: {
+  documents: CurriculumDoc[];
+  isUploading: boolean;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  onPickFile: () => void;
+  onFileChange: (file: File | null) => void;
+  library: LibraryPack[];
+  activatingId: string | null;
+  onActivate: (pack: LibraryPack) => void;
+}) {
+  const activeStoragePaths = new Set(documents.map((d) => d.storage_path));
+  return (
+    <aside
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-lg)",
+        padding: 24,
+        display: "flex",
+        flexDirection: "column",
+        gap: 28,
+        maxHeight: "78vh",
+        overflowY: "auto",
+      }}
+    >
+      <div>
+        <span className="eyebrow">Knowledge base</span>
+        <p style={{ marginTop: 10, fontSize: 12.5, color: "var(--ink-muted)", lineHeight: 1.55 }}>
+          Upload this child&apos;s curriculum PDFs. Echo will use them as the
+          raw material for projects.
+        </p>
+
+        <div
+          style={{
+            marginTop: 16,
+            border: "1px dashed var(--border-strong)",
+            borderRadius: 14,
+            padding: 24,
+            textAlign: "center",
+            cursor: isUploading ? "not-allowed" : "pointer",
+            opacity: isUploading ? 0.5 : 1,
+            transition: "border-color 150ms ease, background 150ms ease",
+          }}
+          onClick={onPickFile}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const f = e.dataTransfer.files?.[0] ?? null;
+            onFileChange(f);
+          }}
+          onMouseOver={(e) => {
+            if (!isUploading) {
+              e.currentTarget.style.borderColor = "var(--violet)";
+              e.currentTarget.style.background = "var(--surface-2)";
+            }
+          }}
+          onMouseOut={(e) => {
+            e.currentTarget.style.borderColor = "var(--border-strong)";
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
+          <input
+            type="file"
+            hidden
+            accept=".pdf"
+            ref={fileInputRef}
+            onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
+          />
+          <UploadIcon />
+          <p style={{ marginTop: 12, fontSize: 14, fontWeight: 500 }}>
+            {isUploading ? "Uploading…" : "Drop a PDF, or click to browse"}
+          </p>
+          <p style={{ marginTop: 6, fontSize: 11.5, color: "var(--ink-muted)" }}>
+            Worksheets, lesson notes, textbook chapters
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <span className="eyebrow">Active documents</span>
+        <ul style={{ marginTop: 12, listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+          {documents.length === 0 ? (
+            <li style={{ fontSize: 12, color: "var(--ink-muted)", fontStyle: "italic" }}>
+              Nothing active yet.
+            </li>
+          ) : (
+            documents.map((doc) => (
+              <li
+                key={doc.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  borderRadius: 8,
+                  border: "1px solid var(--border)",
+                  background: "var(--bg-elev)",
+                  padding: "8px 12px",
+                }}
+              >
+                <span
+                  style={{
+                    fontSize: 13,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    maxWidth: 170,
+                  }}
+                >
+                  {doc.filename}
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    letterSpacing: "0.14em",
+                    color: "var(--cyan)",
+                  }}
+                >
+                  READY
+                </span>
+              </li>
+            ))
+          )}
+        </ul>
+      </div>
+
+      {/* Curriculum library — pre-curated starter packs */}
+      {library.length > 0 && (
+        <div>
+          <span className="eyebrow">From the library</span>
+          <p style={{ marginTop: 8, fontSize: 11.5, color: "var(--ink-muted)", lineHeight: 1.5 }}>
+            One-click curriculum packs Echo can teach from.
+          </p>
+          <ul style={{ marginTop: 12, listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+            {library.map((pack) => {
+              const active = activeStoragePaths.has(pack.storage_path);
+              const busy = activatingId === pack.id;
+              return (
+                <li
+                  key={pack.id}
+                  style={{
+                    borderRadius: 10,
+                    border: "1px solid var(--border)",
+                    background: "var(--bg-elev)",
+                    padding: 12,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 10,
+                      letterSpacing: "0.1em",
+                      textTransform: "uppercase",
+                      color: "var(--ink-muted)",
+                    }}
+                  >
+                    <span style={{ color: "var(--violet)" }}>{pack.region}</span>
+                    {pack.grade && <span>· {pack.grade}</span>}
+                    <span>· {pack.subject}</span>
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "var(--font-serif)",
+                      fontSize: 15,
+                      lineHeight: 1.25,
+                      marginTop: 4,
+                      letterSpacing: "-0.01em",
+                    }}
+                  >
+                    {pack.title}
+                  </div>
+                  {pack.description && (
+                    <p style={{ marginTop: 4, fontSize: 11.5, color: "var(--ink-muted)", lineHeight: 1.45 }}>
+                      {pack.description}
+                    </p>
+                  )}
+                  <button
+                    onClick={() => onActivate(pack)}
+                    disabled={active || busy}
+                    style={{
+                      marginTop: 10,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: active
+                        ? "1px solid rgba(78,216,235,0.4)"
+                        : "1px solid var(--border-strong)",
+                      background: active ? "rgba(78,216,235,0.1)" : "transparent",
+                      color: active ? "var(--cyan)" : "var(--ink)",
+                      fontSize: 12,
+                      fontFamily: "var(--font-sans)",
+                      cursor: active || busy ? "default" : "pointer",
+                      opacity: busy ? 0.6 : 1,
+                      transition: "background 150ms ease, border-color 150ms ease",
+                    }}
+                  >
+                    {active ? "Active" : busy ? "Adding…" : "+ Add to hub"}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function SceneImage({ state }: { state: "loading" | "error" | string | undefined }) {
+  if (!state) return null;
+
+  if (state === "error") return null;
+
+  if (state === "loading") {
+    return (
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          borderRadius: 999,
+          border: "1px solid var(--border)",
+          background: "var(--surface)",
+          padding: "6px 14px",
+          fontSize: 11.5,
+          color: "var(--ink-muted)",
+          fontFamily: "var(--font-mono)",
+        }}
+      >
+        <span
+          style={{
+            width: 12,
+            height: 12,
+            borderRadius: "50%",
+            border: "2px solid var(--border-strong)",
+            borderTopColor: "var(--violet)",
+            animation: "spin 1s linear infinite",
+            display: "inline-block",
+          }}
+        />
+        drawing…
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  // data URL
+  return (
+    <div
+      style={{
+        width: "100%",
+        maxWidth: 480,
+        borderRadius: 12,
+        overflow: "hidden",
+        border: "1px solid var(--border)",
+      }}
+    >
+      {/* Plain img tag because next/image won't optimize base64 data URLs */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={state} alt="Story illustration" style={{ width: "100%", height: "auto", display: "block" }} />
+    </div>
+  );
+}
+
+function UploadIcon() {
+  return (
+    <svg
+      width="28"
+      height="28"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ margin: "0 auto", color: "var(--ink-muted)" }}
+    >
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  );
+}

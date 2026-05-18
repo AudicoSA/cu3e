@@ -1,0 +1,61 @@
+version: '3.8'
+
+services:
+  # 1. Ollama: The local AI inference engine
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./ollama_data:/root/.ollama
+
+  # 2. ChromaDB: Local Vector Database for RAG (NotebookLM alternative)
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./chroma_data:/chroma/chroma
+
+  # 3. Open WebUI: The user-friendly ChatGPT-like interface (integrates with Chroma)
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - CHROMA_HTTP_HOST=chromadb
+      - CHROMA_HTTP_PORT=8000
+    volumes:
+      - ./webui_data:/app/backend/data
+    depends_on:
+      - ollama
+      - chromadb
+
+  # 4. JupyterLab: The Python Coding Sandbox
+  jupyter:
+    image: jupyter/scipy-notebook:latest
+    container_name: jupyter_sandbox
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=aiedubox
+    volumes:
+      - ./jupyter_workspace:/home/jovyan/work
+
+  # 5. Edu-Box Sync Engine: Pulls new curriculum from the Next.js Hub
+  sync-engine:
+    image: alpine:latest
+    container_name: edubox_sync
+    restart: unless-stopped
+    command: /bin/sh -c "while true; do echo 'Syncing with Hub...'; wget -qO- http://your-nextjs-hub.com/api/sync > /dev/null || true; sleep 86400; done"
+    volumes:
+      - ./jupyter_workspace:/sync_dest
