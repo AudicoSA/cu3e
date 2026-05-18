@@ -70,6 +70,14 @@ export async function POST(req: Request) {
     return Response.json({ error: 'bad json' }, { status: 400 });
   }
 
+  const incoming = body.messages ?? [];
+  // The system prompt might be ANY of the messages with role === 'system'
+  // (or message[0]). We search ALL of them for the [CU3E_META] block.
+  const systemMessages = incoming.filter((m) => m.role === 'system').map((m) => m.content ?? '');
+  const combinedSystemText = systemMessages.join('\n---\n');
+  const meta = parseMeta(combinedSystemText);
+  const childId = meta.child_id;
+
   fireAndForgetDiag({
     supabaseUrl,
     serviceKey,
@@ -80,19 +88,21 @@ export async function POST(req: Request) {
       headers: headerEntries,
       tokenStatus,
       bodyKeys: Object.keys(body || {}),
-      messageCount: body?.messages?.length ?? 0,
-      firstSystemPreview: (body?.messages?.[0]?.content ?? '').slice(0, 400),
+      messageCount: incoming.length,
+      systemMessageCount: systemMessages.length,
+      systemTotalChars: combinedSystemText.length,
+      parsedMeta: meta,
+      systemContainsCu3eMeta: combinedSystemText.includes('[CU3E_META]'),
+      firstSystemFull: systemMessages[0] ?? '',
+      allRoles: incoming.map((m) => m.role).join(','),
       elapsedMs: Date.now() - startedAt,
     },
   });
 
-  const incoming = body.messages ?? [];
   if (incoming.length === 0) {
     return Response.json({ error: 'no messages' }, { status: 400 });
   }
 
-  const meta = parseMeta(incoming[0]?.content ?? '');
-  const childId = meta.child_id;
   console.log('[voice-llm] start child_id:', childId);
 
   const supabase = createSupabaseClient(supabaseUrl, serviceKey, {
