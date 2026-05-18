@@ -1,5 +1,4 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 
 export const maxDuration = 60;
 
@@ -26,84 +25,40 @@ type IncomingBody = {
 // bit-for-bit identical to OpenAI's real output (which ElevenLabs already
 // parses every day). No reformatting, no surprise.
 export async function POST(req: Request) {
-  const startedAt = Date.now();
   const expected = process.env.VOICE_LLM_SHARED_SECRET;
   const auth = req.headers.get('authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
-  const ua = req.headers.get('user-agent') ?? '';
-  const reqUrl = new URL(req.url);
-  const reqPath = reqUrl.pathname;
-  const headerEntries: Record<string, string> = {};
-  for (const [k, v] of req.headers.entries()) {
-    if (k.toLowerCase() === 'authorization') {
-      headerEntries[k] = v ? `${v.slice(0, 12)}...(len=${v.length})` : '';
-    } else {
-      headerEntries[k] = v.slice(0, 200);
-    }
+  if (!expected || token !== expected) {
+    return Response.json({ error: 'unauthorized' }, { status: 401 });
   }
-  const tokenStatus =
-    !auth ? 'no-auth-header'
-      : !expected ? 'no-expected-env'
-        : token === expected ? 'ok'
-          : `mismatch(len=${token.length}/${expected.length})`;
-  console.log('[voice-llm] inbound', JSON.stringify({ path: reqPath, ua, headerKeys: Object.keys(headerEntries).join(','), tokenStatus }));
 
   const openaiKey = process.env.OPENAI_API_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!openaiKey || !serviceKey || !supabaseUrl) {
-    console.error('[voice-llm] missing env');
     return Response.json({ error: 'voice-llm not configured' }, { status: 500 });
   }
 
   let body: IncomingBody;
-  let bodyRaw = '';
   try {
-    bodyRaw = await req.text();
-    body = JSON.parse(bodyRaw) as IncomingBody;
+    body = (await req.json()) as IncomingBody;
   } catch {
-    fireAndForgetDiag({
-      supabaseUrl,
-      serviceKey,
-      payload: { stage: 'bad-json', path: reqPath, ua, headers: headerEntries, tokenStatus, bodyPreview: bodyRaw.slice(0, 2000), elapsedMs: Date.now() - startedAt },
-    });
     return Response.json({ error: 'bad json' }, { status: 400 });
   }
 
   const incoming = body.messages ?? [];
-  // The system prompt might be ANY of the messages with role === 'system'
-  // (or message[0]). We search ALL of them for the [CU3E_META] block.
-  const systemMessages = incoming.filter((m) => m.role === 'system').map((m) => m.content ?? '');
-  const combinedSystemText = systemMessages.join('\n---\n');
-  const meta = parseMeta(combinedSystemText);
-  const childId = meta.child_id;
-
-  fireAndForgetDiag({
-    supabaseUrl,
-    serviceKey,
-    payload: {
-      stage: 'inbound',
-      path: reqPath,
-      ua,
-      headers: headerEntries,
-      tokenStatus,
-      bodyKeys: Object.keys(body || {}),
-      messageCount: incoming.length,
-      systemMessageCount: systemMessages.length,
-      systemTotalChars: combinedSystemText.length,
-      parsedMeta: meta,
-      systemContainsCu3eMeta: combinedSystemText.includes('[CU3E_META]'),
-      firstSystemFull: systemMessages[0] ?? '',
-      allRoles: incoming.map((m) => m.role).join(','),
-      elapsedMs: Date.now() - startedAt,
-    },
-  });
-
   if (incoming.length === 0) {
     return Response.json({ error: 'no messages' }, { status: 400 });
   }
 
-  console.log('[voice-llm] start child_id:', childId);
+  // ElevenLabs wraps our agent prompt inside its own preamble, so the
+  // [CU3E_META] block may be in any system message. Search them all.
+  const combinedSystem = incoming
+    .filter((m) => m.role === 'system')
+    .map((m) => m.content ?? '')
+    .join('\n---\n');
+  const meta = parseMeta(combinedSystem);
+  const childId = meta.child_id;
 
   const supabase = createSupabaseClient(supabaseUrl, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
@@ -125,7 +80,7 @@ export async function POST(req: Request) {
         .maybeSingle(),
       supabase
         .from('curriculum_documents')
-        .select('storage_path, filename, created_at')
+        .select('filename, extracted_text, extracted_at')
         .eq('child_id', childId)
         .eq('is_active', true)
         .order('created_at', { ascending: false }),
@@ -138,57 +93,34 @@ export async function POST(req: Request) {
       trace.push(`child:${child.first_name}:${child.age}yo`);
 
       const docs = (docsRes.data ?? []) as Array<{
-        storage_path: string;
         filename: string;
-        created_at: string;
+        extracted_text: string | null;
+        extracted_at: string | null;
       }>;
 
       if (docs.length === 0) {
         trace.push('no-docs');
       } else {
         const seen = new Set<string>();
-        const unique = docs.filter((d) => {
-          if (seen.has(d.filename)) return false;
-          seen.add(d.filename);
-          return true;
-        });
-
-        const downloads = await Promise.all(
-          unique.map(async (doc) => {
-            try {
-              const { data: fileData, error: dlErr } = await supabase.storage
-                .from('curriculum')
-                .download(doc.storage_path);
-              if (dlErr || !fileData) return { err: doc.filename, kind: 'dl' };
-              const buffer = Buffer.from(await fileData.arrayBuffer());
-              const parsed = await pdfParse(buffer);
-              const text = (parsed.text ?? '').replace(/\s+\n/g, '\n').trim();
-              return { ok: { filename: doc.filename, text, bytes: buffer.length } };
-            } catch (e) {
-              return {
-                err: doc.filename,
-                kind: 'parse',
-                msg: e instanceof Error ? e.message : String(e),
-              };
-            }
-          })
-        );
-
-        for (const d of downloads) {
-          if ('err' in d) {
-            trace.push(`${d.kind}-err:${d.err}`);
-          } else if (d.ok) {
-            const text =
-              d.ok.text.length > 6000 ? d.ok.text.slice(0, 6000) + '\n…[truncated]' : d.ok.text;
-            curriculumTexts.push({ filename: d.ok.filename, text });
-            trace.push(`text:${d.ok.filename}:${text.length}c/${d.ok.bytes}b`);
+        for (const doc of docs) {
+          if (seen.has(doc.filename)) continue;
+          seen.add(doc.filename);
+          if (!doc.extracted_text) {
+            trace.push(`no-extract:${doc.filename}`);
+            continue;
           }
+          const text =
+            doc.extracted_text.length > 6000
+              ? doc.extracted_text.slice(0, 6000) + '\n…[truncated]'
+              : doc.extracted_text;
+          curriculumTexts.push({ filename: doc.filename, text });
+          trace.push(`text:${doc.filename}:${text.length}c`);
         }
       }
     }
   }
 
-  console.log('[voice-llm] pipeline:', trace.join(' | '));
+  console.log('[voice-llm]', JSON.stringify({ child_id: childId, trace }));
 
   const systemPrompt = buildVoiceSystemPrompt(child, curriculumTexts);
   const outgoingMessages: IncomingMessage[] = [
@@ -232,32 +164,6 @@ export async function POST(req: Request) {
 }
 
 // ---- Helpers -----------------------------------------------------------
-
-function fireAndForgetDiag(args: {
-  supabaseUrl: string;
-  serviceKey: string;
-  payload: Record<string, unknown>;
-}) {
-  const { supabaseUrl, serviceKey, payload } = args;
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const rand = Math.random().toString(36).slice(2, 8);
-  const path = `_voice_debug/${ts}-${rand}.json`;
-  const url = `${supabaseUrl}/storage/v1/object/curriculum/${path}`;
-  const body = JSON.stringify({ ts: new Date().toISOString(), ...payload }, null, 2);
-
-  fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${serviceKey}`,
-      apikey: serviceKey,
-      'Content-Type': 'application/json',
-      'x-upsert': 'true',
-    },
-    body,
-  }).catch((e) => {
-    console.error('[voice-llm] diag upload failed', e?.message ?? String(e));
-  });
-}
 
 function parseMeta(systemPrompt: string): { child_id?: string; parent_id?: string } {
   const block = /\[CU3E_META\]([\s\S]*?)\[\/CU3E_META\]/.exec(systemPrompt);

@@ -379,13 +379,27 @@ export default function StudyHub() {
         .upload(fileName, file);
       if (uploadError) throw uploadError;
 
-      const { error: dbError } = await supabase.from("curriculum_documents").insert({
-        child_id: selectedChildId,
-        filename: file.name,
-        storage_path: fileName,
-        is_active: true,
-      });
+      const { data: inserted, error: dbError } = await supabase
+        .from("curriculum_documents")
+        .insert({
+          child_id: selectedChildId,
+          filename: file.name,
+          storage_path: fileName,
+          is_active: true,
+        })
+        .select("id")
+        .single();
       if (dbError) throw dbError;
+
+      // Fire-and-forget: pre-extract verbatim text via Claude so Echo can
+      // read scanned/image-only PDFs without per-turn vision processing.
+      if (inserted?.id) {
+        void fetch("/api/extract-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ document_id: inserted.id }),
+        }).catch((err) => console.warn("[extract-pdf] fire-and-forget failed:", err));
+      }
 
       const { data } = await supabase
         .from("curriculum_documents")
