@@ -60,7 +60,18 @@ export async function POST(req: Request) {
       content: [
         {
           type: 'text',
-          text: 'Extract the full verbatim text from this PDF homework worksheet. Include every question number, every fraction, every instruction, every example, every header — exactly as it appears. Preserve question numbering. Do not summarise, comment, paraphrase, or add anything of your own. Output ONLY the extracted text.',
+          text: `Extract the contents of this PDF homework worksheet for an AI tutor that will be helping the child. The tutor cannot see the PDF itself — only your extraction — so be exhaustive.
+
+For every page, capture:
+1. ALL printed text: titles, instructions, question numbers, math expressions, fractions, blanks, answer choices.
+2. ALL pictures/illustrations: describe WHAT is drawn in each question (fish, balloons, pizza slices, apples, circles, bars, pie charts, etc.) and HOW MANY there are, including which are shaded/coloured vs blank.
+3. The visual structure: which picture belongs to which question number.
+
+Output format:
+- One page per section, separated by "---".
+- For each question, write: \`Q<number>: <printed text>. Picture: <description>.\` if there's a picture, otherwise just the text.
+- Preserve original question numbering (a, b, c, 1, 2, 3 etc).
+- Do not summarise. Do not paraphrase. Do not solve. Output ONLY the structured extraction.`,
         },
         {
           type: 'file',
