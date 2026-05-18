@@ -5,7 +5,7 @@ export const metadata = {
 
 export default function ContactPage() {
   return (
-    <section className="container" style={{ maxWidth: 640, padding: "80px 32px 96px" }}>
+    <section className="container" style={{ maxWidth: 640, padding: "80px 0 96px" }}>
       <span className="eyebrow">Contact</span>
       <h1 className="h-section" style={{ marginTop: 12, fontSize: "clamp(32px, 4.4vw, 48px)" }}>
         We&apos;re actually <span className="serif-italic accent">here.</span>

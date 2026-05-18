@@ -15,7 +15,7 @@ export default async function ResetPasswordPage({
   const { data: { user } } = await supabase.auth.getUser();
 
   return (
-    <div className="container" style={{ maxWidth: 480, padding: "80px 32px" }}>
+    <div className="container" style={{ maxWidth: 480, padding: "80px 0" }}>
       <div
         style={{
           background: "var(--surface)",

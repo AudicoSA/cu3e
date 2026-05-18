@@ -318,7 +318,7 @@ export default async function Dashboard() {
     : "";
 
   return (
-    <section className="container" style={{ padding: "56px 32px 96px" }}>
+    <section className="container" style={{ padding: "56px 0 96px" }}>
       {/* Header */}
       <div
         style={{

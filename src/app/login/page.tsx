@@ -7,7 +7,7 @@ export default async function Login({
 }) {
   const params = await searchParams;
   return (
-    <div className="container" style={{ maxWidth: 480, padding: "80px 32px" }}>
+    <div className="container" style={{ maxWidth: 480, padding: "80px 0" }}>
       <div
         style={{
           background: "var(--surface)",

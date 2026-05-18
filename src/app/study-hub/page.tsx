@@ -557,7 +557,7 @@ export default function StudyHub() {
   const intro = INTROS[mode];
 
   return (
-    <section className="container" style={{ padding: "56px 32px 96px", minHeight: "88vh", display: "flex", flexDirection: "column" }}>
+    <section className="container" style={{ padding: "56px 0 96px", minHeight: "88vh", display: "flex", flexDirection: "column" }}>
       {/* Header */}
       <div
         style={{
@@ -908,6 +908,9 @@ export default function StudyHub() {
       <style>{`
         @media (max-width: 920px) {
           .hub-body { grid-template-columns: 1fr !important; }
+          /* On mobile the sidebar stacks above the chat. Keep it compact so
+             the chat is visible without scrolling past upload + library. */
+          .hub-sidebar { max-height: 320px !important; padding: 16px !important; gap: 20px !important; }
         }
       `}</style>
     </section>
@@ -1007,6 +1010,7 @@ function Sidebar({
 
   return (
     <aside
+      className="hub-sidebar"
       style={{
         background: "var(--surface)",
         border: "1px solid var(--border)",

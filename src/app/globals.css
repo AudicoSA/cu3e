@@ -154,6 +154,12 @@ button { font: inherit; cursor: pointer; }
 .container       { max-width: 1320px; margin: 0 auto; padding: 0 32px; }
 .container-tight { max-width: 1080px; margin: 0 auto; padding: 0 32px; }
 
+/* Tighter horizontal padding on phones so cards aren't squeezed into a strip. */
+@media (max-width: 640px) {
+  .container,
+  .container-tight { padding: 0 16px; }
+}
+
 /* ============================================================
    HEADER / NAV
    ============================================================ */

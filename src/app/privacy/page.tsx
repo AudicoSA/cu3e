@@ -5,7 +5,7 @@ export const metadata = {
 
 export default function PrivacyPage() {
   return (
-    <section className="container" style={{ maxWidth: 720, padding: "80px 32px 96px" }}>
+    <section className="container" style={{ maxWidth: 720, padding: "80px 0 96px" }}>
       <span className="eyebrow">Privacy</span>
       <h1 className="h-section" style={{ marginTop: 12, fontSize: "clamp(32px, 4.4vw, 48px)" }}>
         How we handle your child&apos;s data.
