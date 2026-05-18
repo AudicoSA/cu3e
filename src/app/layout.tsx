@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans, Instrument_Serif, JetBrains_Mono } from "next/font/google";
 import Image from "next/image";
 import { createClient } from "@/utils/supabase/server";
+import HeaderNav from "./components/HeaderNav";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -67,46 +68,7 @@ export default async function RootLayout({
               </span>
             </a>
 
-            <nav className="nav-links">
-              {isAuthed ? (
-                <>
-                  <a href="/study-hub">Study Hub</a>
-                  <a href="/skills">AI Skills</a>
-                  <a href="/dashboard">Dashboard</a>
-                  <a href="/pricing">Pricing</a>
-                </>
-              ) : (
-                <>
-                  <a href="/#modes">How it works</a>
-                  <a href="/#outcomes">Outcomes</a>
-                  <a href="/#parents">For parents</a>
-                  <a href="/pricing">Pricing</a>
-                  <a href="/#faq">FAQ</a>
-                </>
-              )}
-            </nav>
-
-            <div className="flex-row">
-              {isAuthed ? (
-                <a href="/dashboard" className="btn btn-violet">
-                  Open dashboard
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                </a>
-              ) : (
-                <>
-                  <a
-                    href="/login"
-                    style={{ fontSize: 14, color: "var(--ink-muted)", padding: "8px 12px" }}
-                  >
-                    Log in
-                  </a>
-                  <a href="/register" className="btn btn-violet">
-                    Start free trial
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                  </a>
-                </>
-              )}
-            </div>
+            <HeaderNav isAuthed={isAuthed} />
           </div>
         </header>
 
