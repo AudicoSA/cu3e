@@ -1,11 +1,9 @@
-import { streamText, type ModelMessage } from 'ai';
-import { openai } from '@ai-sdk/openai';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import pdfParse from 'pdf-parse/lib/pdf-parse.js';
 
 export const maxDuration = 60;
 
-// ---- Types from ElevenLabs (OpenAI Chat Completions request) ------------
+// ---- Types --------------------------------------------------------------
 type IncomingMessage = {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -19,21 +17,35 @@ type IncomingBody = {
 };
 
 // ---- Endpoint -----------------------------------------------------------
-// This is the "Custom LLM" called by ElevenLabs Conversational AI. It implements
-// the OpenAI Chat Completions streaming spec so ElevenLabs treats us like
-// OpenAI, but internally we look up the child + curriculum from Supabase and
-// run the full Echo brain on top of GPT-4o-mini (PDF-aware).
+// Custom LLM called by ElevenLabs Conversational AI. We proxy DIRECTLY to
+// OpenAI's chat.completions stream — that way the response is bit-for-bit
+// identical to OpenAI's real output (which ElevenLabs already parses every
+// day). No reformatting, no chance of "Brain returned no response" because
+// of a missing field or quirky encoding.
 //
-// Crucially: we open the SSE response IMMEDIATELY after the cheap auth check,
-// then do DB + storage + OpenAI work INSIDE the stream. This way ElevenLabs
-// sees data flowing within milliseconds and doesn't trip its cascade timeout
-// while we're loading a fat PDF.
+// What we do server-side before proxying:
+//   1. Authenticate via shared secret (bearer token)
+//   2. Parse [CU3E_META] block from the system prompt to recover child_id
+//   3. Load the child + their active curriculum PDFs from Supabase
+//   4. Extract PDF text via pdf-parse (much faster than OpenAI vision)
+//   5. Replace ElevenLabs's bare system prompt with our voice-tuned Echo
+//      system prompt that has the curriculum text inlined
+//   6. Forward the conversation history as-is and pipe OpenAI's response
+//      stream straight back to ElevenLabs
 export async function POST(req: Request) {
   const expected = process.env.VOICE_LLM_SHARED_SECRET;
   const auth = req.headers.get('authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
   if (!expected || token !== expected) {
     return Response.json({ error: 'unauthorized' }, { status: 401 });
+  }
+
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!openaiKey || !serviceKey || !supabaseUrl) {
+    console.error('[voice-llm] missing env');
+    return Response.json({ error: 'voice-llm not configured' }, { status: 500 });
   }
 
   let body: IncomingBody;
@@ -44,214 +56,141 @@ export async function POST(req: Request) {
   }
 
   const incoming = body.messages ?? [];
-  const id = `chatcmpl-cu3e-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-  const created = Math.floor(Date.now() / 1000);
-  const modelName = body.model ?? 'gpt-4o-mini';
-  const temperature = body.temperature ?? 0.6;
-  const encoder = new TextEncoder();
+  if (incoming.length === 0) {
+    return Response.json({ error: 'no messages' }, { status: 400 });
+  }
 
-  // Open the stream IMMEDIATELY — all heavy work happens inside start().
-  const sseStream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const send = (obj: unknown) => {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(obj)}\n\n`));
-      };
-      const chunk = (delta: object, finish_reason: string | null = null) => ({
-        id,
-        object: 'chat.completion.chunk',
-        created,
-        model: modelName,
-        system_fingerprint: null,
-        choices: [{ index: 0, delta, finish_reason, logprobs: null }],
-      });
-      // Final usage chunk — OpenAI emits this when stream_options.include_usage
-      // is true. ElevenLabs's accounting reads from this; without it they
-      // report `model_usage: {}` and treat the response as failed.
-      const usageChunk = (promptTokens: number, completionTokens: number) => ({
-        id,
-        object: 'chat.completion.chunk',
-        created,
-        model: modelName,
-        system_fingerprint: null,
-        choices: [],
-        usage: {
-          prompt_tokens: promptTokens,
-          completion_tokens: completionTokens,
-          total_tokens: promptTokens + completionTokens,
-        },
-      });
-      const finishWith = (text: string | null) => {
-        if (text) send(chunk({ content: text }));
-        send(chunk({}, 'stop'));
-        // Best-effort estimate when we can't get real usage (early error paths)
-        send(usageChunk(50, text ? Math.ceil(text.length / 4) : 1));
-        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        controller.close();
-      };
+  // 1. Parse meta from ElevenLabs' interpolated system prompt
+  const meta = parseMeta(incoming[0]?.content ?? '');
+  const childId = meta.child_id;
+  console.log('[voice-llm] start child_id:', childId);
 
-      try {
-        // 1. Role chunk — first byte to keep ElevenLabs happy
-        send(chunk({ role: 'assistant', content: '' }));
-
-        if (incoming.length === 0) {
-          finishWith('Hmm, I missed that — try again?');
-          return;
-        }
-
-        // 2. Parse meta from system prompt
-        const meta = parseMeta(incoming[0]?.content ?? '');
-        const childId = meta.child_id;
-        console.log('[voice-llm] start child_id:', childId);
-
-        // 3. Heavy work: child + curriculum lookup
-        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        if (!serviceKey || !supabaseUrl) {
-          console.error('[voice-llm] missing supabase env');
-          finishWith('Voice service is misconfigured — tell Dad.');
-          return;
-        }
-
-        const supabase = createSupabaseClient(supabaseUrl, serviceKey, {
-          auth: { autoRefreshToken: false, persistSession: false },
-        });
-
-        type Child = { id: string; first_name: string; age: number | null; grade: string | null };
-        let child: Child | null = null;
-        const curriculumTexts: Array<{ filename: string; text: string }> = [];
-        const trace: string[] = [];
-
-        if (!childId) {
-          trace.push('no-child-id');
-        } else {
-          // Parallel: child row + active doc list at the same time.
-          const [childRes, docsRes] = await Promise.all([
-            supabase
-              .from('children')
-              .select('id, first_name, age, grade')
-              .eq('id', childId)
-              .maybeSingle(),
-            supabase
-              .from('curriculum_documents')
-              .select('storage_path, filename, created_at')
-              .eq('child_id', childId)
-              .eq('is_active', true)
-              .order('created_at', { ascending: false }),
-          ]);
-
-          child = (childRes.data as Child) ?? null;
-          if (!child) {
-            trace.push('child-not-found');
-          } else {
-            trace.push(`child:${child.first_name}:${child.age}yo`);
-
-            const docs = (docsRes.data ?? []) as Array<{
-              storage_path: string;
-              filename: string;
-              created_at: string;
-            }>;
-
-            if (docs.length === 0) {
-              trace.push('no-docs');
-            } else {
-              // Dedupe by filename, then download in PARALLEL — saves seconds
-              // when a child has multiple active PDFs.
-              const seen = new Set<string>();
-              const unique = docs.filter((d) => {
-                if (seen.has(d.filename)) return false;
-                seen.add(d.filename);
-                return true;
-              });
-
-              // Download + extract text in parallel. Extracting text server-side
-              // (via pdf-parse) and inlining it as text in the system prompt is
-              // 5-10x faster than attaching the binary and letting OpenAI's
-              // vision pipeline render every page. Image-based PDFs return
-              // near-empty text and we note that in the trace.
-              const downloads = await Promise.all(
-                unique.map(async (doc) => {
-                  try {
-                    const { data: fileData, error: dlErr } = await supabase.storage
-                      .from('curriculum')
-                      .download(doc.storage_path);
-                    if (dlErr || !fileData) return { err: doc.filename, kind: 'dl' };
-                    const buffer = Buffer.from(await fileData.arrayBuffer());
-                    const parsed = await pdfParse(buffer);
-                    const text = (parsed.text ?? '').replace(/\s+\n/g, '\n').trim();
-                    return { ok: { filename: doc.filename, text, bytes: buffer.length } };
-                  } catch (e) {
-                    return { err: doc.filename, kind: 'parse', msg: e instanceof Error ? e.message : String(e) };
-                  }
-                })
-              );
-
-              for (const d of downloads) {
-                if ('err' in d) {
-                  trace.push(`${d.kind}-err:${d.err}`);
-                } else if (d.ok) {
-                  // Cap each PDF's text at 6000 chars — keeps token cost
-                  // reasonable and fits inside an ElevenLabs Custom LLM call.
-                  const text = d.ok.text.length > 6000 ? d.ok.text.slice(0, 6000) + '\n…[truncated]' : d.ok.text;
-                  curriculumTexts.push({ filename: d.ok.filename, text });
-                  trace.push(`text:${d.ok.filename}:${text.length}c/${d.ok.bytes}b`);
-                }
-              }
-            }
-          }
-        }
-
-        console.log('[voice-llm] pipeline:', trace.join(' | '));
-
-        // 4. Build our system prompt with inlined curriculum text + forward history
-        const systemPrompt = buildVoiceSystemPrompt(child, curriculumTexts);
-        const history: ModelMessage[] = incoming
-          .filter((m) => m.role !== 'system')
-          .map((m) => ({ role: m.role, content: m.content }));
-
-        // 5. Stream OpenAI completion.
-        // maxOutputTokens caps Echo at ~2-3 sentences of voice — fast AND on-brand
-        // (voice replies should be short). Cuts total response time dramatically,
-        // which matters because ElevenLabs has a hard cascade timeout (~8s) on
-        // how long it waits for our endpoint to finish streaming.
-        const result = streamText({
-          model: openai('gpt-4o-mini'),
-          system: systemPrompt,
-          messages: history,
-          maxRetries: 1,
-          temperature,
-          maxOutputTokens: 180,
-        });
-
-        for await (const delta of result.textStream) {
-          if (!delta) continue;
-          send(chunk({ content: delta }));
-        }
-
-        // 6. Done — send finish + usage chunks (ElevenLabs reads usage to
-        // confirm the call generated tokens; missing usage = "no response").
-        send(chunk({}, 'stop'));
-        try {
-          const usage = await result.usage;
-          send(usageChunk(usage.inputTokens ?? 0, usage.outputTokens ?? 0));
-        } catch {
-          // Fallback if usage isn't available — better than no usage chunk at all
-          send(usageChunk(50, 50));
-        }
-        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-        controller.close();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error('[voice-llm] error:', msg);
-        try {
-          finishWith(' — sorry, something went wrong on my side.');
-        } catch {
-          /* stream may already be closed */
-        }
-      }
-    },
+  // 2. Load child + curriculum (this happens BEFORE we open the OpenAI stream,
+  //    but it's fast — Supabase calls in parallel, PDF text extraction is
+  //    server-side. Total prep typically ~1s.)
+  const supabase = createSupabaseClient(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  return new Response(sseStream, {
+  type Child = { id: string; first_name: string; age: number | null; grade: string | null };
+  let child: Child | null = null;
+  const curriculumTexts: Array<{ filename: string; text: string }> = [];
+  const trace: string[] = [];
+
+  if (!childId) {
+    trace.push('no-child-id');
+  } else {
+    const [childRes, docsRes] = await Promise.all([
+      supabase
+        .from('children')
+        .select('id, first_name, age, grade')
+        .eq('id', childId)
+        .maybeSingle(),
+      supabase
+        .from('curriculum_documents')
+        .select('storage_path, filename, created_at')
+        .eq('child_id', childId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false }),
+    ]);
+
+    child = (childRes.data as Child) ?? null;
+    if (!child) {
+      trace.push('child-not-found');
+    } else {
+      trace.push(`child:${child.first_name}:${child.age}yo`);
+
+      const docs = (docsRes.data ?? []) as Array<{
+        storage_path: string;
+        filename: string;
+        created_at: string;
+      }>;
+
+      if (docs.length === 0) {
+        trace.push('no-docs');
+      } else {
+        const seen = new Set<string>();
+        const unique = docs.filter((d) => {
+          if (seen.has(d.filename)) return false;
+          seen.add(d.filename);
+          return true;
+        });
+
+        const downloads = await Promise.all(
+          unique.map(async (doc) => {
+            try {
+              const { data: fileData, error: dlErr } = await supabase.storage
+                .from('curriculum')
+                .download(doc.storage_path);
+              if (dlErr || !fileData) return { err: doc.filename, kind: 'dl' };
+              const buffer = Buffer.from(await fileData.arrayBuffer());
+              const parsed = await pdfParse(buffer);
+              const text = (parsed.text ?? '').replace(/\s+\n/g, '\n').trim();
+              return { ok: { filename: doc.filename, text, bytes: buffer.length } };
+            } catch (e) {
+              return {
+                err: doc.filename,
+                kind: 'parse',
+                msg: e instanceof Error ? e.message : String(e),
+              };
+            }
+          })
+        );
+
+        for (const d of downloads) {
+          if ('err' in d) {
+            trace.push(`${d.kind}-err:${d.err}`);
+          } else if (d.ok) {
+            const text =
+              d.ok.text.length > 6000 ? d.ok.text.slice(0, 6000) + '\n…[truncated]' : d.ok.text;
+            curriculumTexts.push({ filename: d.ok.filename, text });
+            trace.push(`text:${d.ok.filename}:${text.length}c/${d.ok.bytes}b`);
+          }
+        }
+      }
+    }
+  }
+
+  console.log('[voice-llm] pipeline:', trace.join(' | '));
+
+  // 3. Build the messages array we'll forward to OpenAI:
+  //    - Replace ElevenLabs's bare system prompt with our voice-tuned Echo prompt
+  //    - Keep the conversation history untouched
+  const systemPrompt = buildVoiceSystemPrompt(child, curriculumTexts);
+  const outgoingMessages: IncomingMessage[] = [
+    { role: 'system', content: systemPrompt },
+    ...incoming.filter((m) => m.role !== 'system'),
+  ];
+
+  // 4. Call OpenAI directly. Stream goes back through us unchanged — exact
+  //    OpenAI Chat Completions chunk format that ElevenLabs is built to parse.
+  const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${openaiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: outgoingMessages,
+      stream: true,
+      stream_options: { include_usage: true },
+      temperature: body.temperature ?? 0.6,
+      max_tokens: 200,
+    }),
+  });
+
+  if (!upstream.ok || !upstream.body) {
+    const errText = await upstream.text().catch(() => '');
+    console.error('[voice-llm] openai non-ok:', upstream.status, errText.slice(0, 400));
+    return Response.json(
+      { error: `openai ${upstream.status}` },
+      { status: 500 }
+    );
+  }
+
+  // 5. Pipe straight through. No translation, no reformatting.
+  return new Response(upstream.body, {
     headers: {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
@@ -295,9 +234,6 @@ function buildVoiceSystemPrompt(
       ? `${name} is ${ageLabel}${gradeLabel}. Match their level: short words, gentler tone, playful. One idea per sentence.`
       : `${name} is ${ageLabel}${gradeLabel}. Talk like a smart older friend — direct, curious, a little dry. Trust them.`;
 
-  // Build curriculum block — only include PDFs with meaningful extracted text
-  // (image-based PDFs return near-empty text from pdf-parse and just clutter
-  // the prompt without value).
   const usableCurriculum = curriculumTexts.filter((c) => c.text && c.text.trim().length > 80);
   let curriculumBlock = '';
   if (usableCurriculum.length > 0) {
@@ -307,7 +243,6 @@ ${usableCurriculum.map((c) => `--- ${c.filename} ---\n${c.text}`).join('\n\n')}
 
 You CAN reference specific problems, rules, examples and numbers from the curriculum above when ${name} asks about their homework. Refer to them naturally — "you've got 3/4 plus 1/2 in question 2, right?" — not by quoting verbatim.`;
   } else if (curriculumTexts.length > 0) {
-    // We have PDFs but they're image-based / un-extractable
     curriculumBlock = `\n\nNOTE: ${name} has uploaded homework PDFs but they're image-based and you can't read the text directly. If they ask about a specific problem, ask them to read it aloud to you first, then guide them from there.`;
   }
 
