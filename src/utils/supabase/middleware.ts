@@ -43,6 +43,7 @@ export async function updateSession(request: NextRequest) {
     !request.nextUrl.pathname.startsWith('/reset-password') &&
     !request.nextUrl.pathname.startsWith('/api/demo-chat') &&
     !request.nextUrl.pathname.startsWith('/api/voice-llm') &&
+    !request.nextUrl.pathname.startsWith('/api/voice-webhook') &&
     request.nextUrl.pathname !== '/' &&
     request.nextUrl.pathname !== '/pricing' &&
     request.nextUrl.pathname !== '/skills' &&
