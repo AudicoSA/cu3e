@@ -92,7 +92,13 @@ export default function StudyHub() {
 
   // Documents for current child
   const [documents, setDocuments] = useState<CurriculumDoc[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
+  // Upload + extraction state. "uploading" = Supabase upload in flight,
+  // "extracting" = Claude reading the PDF, "ready" = saved + extracted.
+  // Both phases share one drop-zone status banner.
+  const [uploadStage, setUploadStage] = useState<
+    'idle' | 'uploading' | 'extracting' | 'ready' | 'error'
+  >('idle');
+  const [uploadFilename, setUploadFilename] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Curriculum library (shared catalog)
@@ -371,7 +377,9 @@ export default function StudyHub() {
       return;
     }
 
-    setIsUploading(true);
+    setUploadFilename(file.name);
+    setUploadStage('uploading');
+    let insertedId: string | null = null;
     try {
       const fileName = `${selectedChildId}-${Date.now()}.pdf`;
       const { error: uploadError } = await supabase.storage
@@ -390,17 +398,9 @@ export default function StudyHub() {
         .select("id")
         .single();
       if (dbError) throw dbError;
+      insertedId = inserted?.id ?? null;
 
-      // Fire-and-forget: pre-extract verbatim text via Claude so Echo can
-      // read scanned/image-only PDFs without per-turn vision processing.
-      if (inserted?.id) {
-        void fetch("/api/extract-pdf", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ document_id: inserted.id }),
-        }).catch((err) => console.warn("[extract-pdf] fire-and-forget failed:", err));
-      }
-
+      // Refresh the sidebar list immediately so the new doc appears.
       const { data } = await supabase
         .from("curriculum_documents")
         .select("id, filename, storage_path, is_active, child_id")
@@ -408,12 +408,33 @@ export default function StudyHub() {
         .eq("is_active", true)
         .order("created_at", { ascending: false });
       if (data) setDocuments(data as CurriculumDoc[]);
+
+      // Now run extraction with the user watching. We poll for completion
+      // by awaiting the extract-pdf endpoint directly (it only returns after
+      // Claude has saved the text). Roughly 10-30s for typical homework PDFs.
+      if (insertedId) {
+        setUploadStage('extracting');
+        const res = await fetch("/api/extract-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ document_id: insertedId }),
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.error || `extract failed (${res.status})`);
+        }
+        setUploadStage('ready');
+        // Linger on "ready" for a moment so the user actually sees it.
+        setTimeout(() => setUploadStage('idle'), 2500);
+      } else {
+        setUploadStage('idle');
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       console.error(err);
+      setUploadStage('error');
       alert("Upload failed: " + msg);
-    } finally {
-      setIsUploading(false);
+      setTimeout(() => setUploadStage('idle'), 4000);
     }
   };
 
@@ -515,7 +536,8 @@ export default function StudyHub() {
         {mode === "tutor" && (
           <Sidebar
             documents={documents}
-            isUploading={isUploading}
+            uploadStage={uploadStage}
+            uploadFilename={uploadFilename}
             fileInputRef={fileInputRef}
             onPickFile={() => fileInputRef.current?.click()}
             onFileChange={(f) => f && handleFileUpload(f)}
@@ -786,7 +808,8 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
 
 function Sidebar({
   documents,
-  isUploading,
+  uploadStage,
+  uploadFilename,
   fileInputRef,
   onPickFile,
   onFileChange,
@@ -795,7 +818,8 @@ function Sidebar({
   onActivate,
 }: {
   documents: CurriculumDoc[];
-  isUploading: boolean;
+  uploadStage: 'idle' | 'uploading' | 'extracting' | 'ready' | 'error';
+  uploadFilename: string;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onPickFile: () => void;
   onFileChange: (file: File | null) => void;
@@ -804,6 +828,20 @@ function Sidebar({
   onActivate: (pack: LibraryPack) => void;
 }) {
   const activeStoragePaths = new Set(documents.map((d) => d.storage_path));
+  const busy = uploadStage === 'uploading' || uploadStage === 'extracting';
+
+  const stageLabel =
+    uploadStage === 'uploading' ? 'Uploading PDF…'
+      : uploadStage === 'extracting' ? 'Echo is reading your worksheet (10–30 sec)…'
+        : uploadStage === 'ready' ? 'Ready — Echo can talk about it now ✓'
+          : uploadStage === 'error' ? 'Upload failed'
+            : '';
+
+  const stageColor =
+    uploadStage === 'ready' ? 'var(--green, #4ade80)'
+      : uploadStage === 'error' ? 'var(--red, #f87171)'
+        : 'var(--ink)';
+
   return (
     <aside
       style={{
@@ -832,19 +870,20 @@ function Sidebar({
             borderRadius: 14,
             padding: 24,
             textAlign: "center",
-            cursor: isUploading ? "not-allowed" : "pointer",
-            opacity: isUploading ? 0.5 : 1,
+            cursor: busy ? "not-allowed" : "pointer",
+            opacity: busy ? 0.7 : 1,
             transition: "border-color 150ms ease, background 150ms ease",
           }}
-          onClick={onPickFile}
+          onClick={() => { if (!busy) onPickFile(); }}
           onDragOver={(e) => e.preventDefault()}
           onDrop={(e) => {
             e.preventDefault();
+            if (busy) return;
             const f = e.dataTransfer.files?.[0] ?? null;
             onFileChange(f);
           }}
           onMouseOver={(e) => {
-            if (!isUploading) {
+            if (!busy) {
               e.currentTarget.style.borderColor = "var(--violet)";
               e.currentTarget.style.background = "var(--surface-2)";
             }
@@ -862,14 +901,50 @@ function Sidebar({
             onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
           />
           <UploadIcon />
-          <p style={{ marginTop: 12, fontSize: 14, fontWeight: 500 }}>
-            {isUploading ? "Uploading…" : "Drop a PDF, or click to browse"}
+          <p style={{ marginTop: 12, fontSize: 14, fontWeight: 500, color: stageColor }}>
+            {uploadStage === 'idle' ? 'Drop a PDF, or click to browse' : stageLabel}
           </p>
-          <p style={{ marginTop: 6, fontSize: 11.5, color: "var(--ink-muted)" }}>
-            Worksheets, lesson notes, textbook chapters
-          </p>
+          {busy && uploadFilename && (
+            <p style={{ marginTop: 4, fontSize: 11.5, color: "var(--ink-muted)" }}>
+              {uploadFilename}
+            </p>
+          )}
+          {!busy && uploadStage === 'idle' && (
+            <p style={{ marginTop: 6, fontSize: 11.5, color: "var(--ink-muted)" }}>
+              Worksheets, lesson notes, textbook chapters
+            </p>
+          )}
+          {busy && (
+            <div
+              style={{
+                marginTop: 14,
+                height: 3,
+                width: "100%",
+                background: "var(--surface-2)",
+                borderRadius: 2,
+                overflow: "hidden",
+                position: "relative",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background:
+                    "linear-gradient(90deg, transparent, var(--violet, #8b5cf6), transparent)",
+                  animation: "uploadBarSlide 1.2s ease-in-out infinite",
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
+      <style>{`
+        @keyframes uploadBarSlide {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+      `}</style>
 
       <div>
         <span className="eyebrow">Active documents</span>
