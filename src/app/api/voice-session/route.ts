@@ -1,3 +1,5 @@
+import { generateText } from 'ai';
+import { anthropic } from '@ai-sdk/anthropic';
 import { createServerClient, type CookieMethodsServerDeprecated } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 
@@ -66,24 +68,55 @@ export async function POST(req: Request) {
       childGrade = (childRow.grade as string) ?? null;
       if (typeof childAge === 'number' && childAge <= 9) ageBand = 'little';
 
-      // Pull the kid's most recent chat topics (last 14 days, user messages only).
+      // Pull the kid's most recent turns (both sides of the conversation,
+      // last 14 days) so Haiku can summarise the actual context — not just
+      // user-side fragments.
       const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
       const { data: recentRows } = await supabase
         .from('chat_messages')
-        .select('content, mode, created_at')
+        .select('role, content, mode, created_at')
         .eq('child_id', childRow.id)
-        .eq('role', 'user')
         .gte('created_at', fourteenDaysAgo)
         .order('created_at', { ascending: false })
-        .limit(8);
+        .limit(40);
 
       if (recentRows && recentRows.length > 0) {
-        const lines = recentRows.map((r) => {
-          const tag = r.mode && r.mode !== 'tutor' ? `[${r.mode}] ` : '';
-          const snippet = String(r.content).replace(/\s+/g, ' ').slice(0, 120);
-          return `- ${tag}${snippet}`;
-        });
-        recentSummary = lines.join('\n');
+        // Order oldest → newest so the summary reads chronologically.
+        const ordered = [...recentRows].reverse();
+        const transcript = ordered
+          .map((r) => {
+            const who = r.role === 'user' ? childName : 'Echo';
+            const tag = r.mode && r.mode !== 'tutor' ? ` [${r.mode}]` : '';
+            const snippet = String(r.content).replace(/\s+/g, ' ').slice(0, 200);
+            return `${who}${tag}: ${snippet}`;
+          })
+          .join('\n');
+
+        try {
+          const { text } = await generateText({
+            model: anthropic('claude-haiku-4-5-20251001'),
+            messages: [
+              {
+                role: 'user',
+                content: `Summarise what ${childName} (a kid) has been working on with Echo lately, based on these recent chats. ONE OR TWO short sentences max. Mention specific topics or worksheets if obvious. If they got stuck somewhere, name it. If they had a breakthrough, name it. No preamble, no quotes, no "the child" — refer to ${childName} by name. Just the summary, plain text.\n\nCHATS:\n${transcript}`,
+              },
+            ],
+            maxRetries: 1,
+          });
+          const summary = (text ?? '').trim();
+          if (summary) recentSummary = summary;
+        } catch (e) {
+          console.warn(
+            '[voice-session] recent-topics summary failed:',
+            e instanceof Error ? e.message : String(e)
+          );
+          // Fall back to the raw-bullet form so Echo still has SOME context.
+          const lines = ordered
+            .filter((r) => r.role === 'user')
+            .slice(-6)
+            .map((r) => `- ${String(r.content).replace(/\s+/g, ' ').slice(0, 120)}`);
+          if (lines.length > 0) recentSummary = lines.join('\n');
+        }
       }
     }
   }

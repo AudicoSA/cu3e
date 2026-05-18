@@ -221,6 +221,54 @@ export default async function Dashboard() {
 
   const skillsExploredCount = skillStats.filter((s) => s.sessions > 0).length;
 
+  // -----------------------------------------------------------------------
+  // Worksheet progress — pulled from curriculum_progress (Haiku-grader hits)
+  // and joined to active curriculum_documents per child.
+  // -----------------------------------------------------------------------
+  const { data: progressRows } = await supabase
+    .from("curriculum_progress")
+    .select("child_id, curriculum_document_id")
+    .eq("parent_id", user.id);
+  const progressCounts = new Map<string, number>(); // key: `${child_id}::${doc_id}`
+  for (const r of (progressRows ?? []) as Array<{ child_id: string; curriculum_document_id: string }>) {
+    const k = `${r.child_id}::${r.curriculum_document_id}`;
+    progressCounts.set(k, (progressCounts.get(k) ?? 0) + 1);
+  }
+
+  const childIds = (children ?? []).map((c) => c.id as string);
+  const { data: docsForProgress } = childIds.length === 0
+    ? { data: [] as Array<{ id: string; filename: string; child_id: string; question_count: number | null }> }
+    : await supabase
+        .from("curriculum_documents")
+        .select("id, filename, child_id, question_count")
+        .in("child_id", childIds)
+        .eq("is_active", true);
+
+  type WorksheetProgress = {
+    child_id: string;
+    child_name: string;
+    doc_id: string;
+    filename: string;
+    answered: number;
+    total: number;
+  };
+  const childNameById = new Map(
+    (children ?? []).map((c) => [c.id as string, c.first_name as string])
+  );
+  const worksheetProgress: WorksheetProgress[] = (
+    (docsForProgress ?? []) as Array<{ id: string; filename: string; child_id: string; question_count: number | null }>
+  )
+    .filter((d) => (d.question_count ?? 0) > 0)
+    .map((d) => ({
+      child_id: d.child_id,
+      child_name: childNameById.get(d.child_id) ?? "Unknown",
+      doc_id: d.id,
+      filename: d.filename,
+      answered: progressCounts.get(`${d.child_id}::${d.id}`) ?? 0,
+      total: d.question_count ?? 0,
+    }))
+    .sort((a, b) => b.answered / b.total - a.answered / a.total);
+
   const analyticsChildren = (children ?? []).map((c) => ({
     id: c.id as string,
     first_name: c.first_name as string,
@@ -327,6 +375,83 @@ export default async function Dashboard() {
               (children ?? []).map((c) => [c.id as string, c.first_name as string])
             )}
           />
+
+          {/* Worksheet progress */}
+          {worksheetProgress.length > 0 && (
+            <div
+              style={{
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-lg)",
+                padding: 28,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <div>
+                  <span className="eyebrow">Worksheet progress</span>
+                  <h3 style={{ marginTop: 8, fontSize: 20, fontWeight: 600 }}>
+                    What they&apos;ve solved
+                  </h3>
+                </div>
+                <span style={{ fontSize: 12, color: "var(--ink-muted)" }}>
+                  Updated as Echo grades each correct answer
+                </span>
+              </div>
+
+              <ul
+                style={{
+                  marginTop: 20,
+                  listStyle: "none",
+                  padding: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 16,
+                }}
+              >
+                {worksheetProgress.map((wp) => {
+                  const pct = wp.total > 0 ? Math.min(100, (wp.answered / wp.total) * 100) : 0;
+                  return (
+                    <li key={`${wp.child_id}-${wp.doc_id}`}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "baseline",
+                          marginBottom: 6,
+                          gap: 12,
+                        }}
+                      >
+                        <span style={{ fontSize: 14, fontWeight: 500 }}>
+                          <span style={{ color: "var(--ink-muted)" }}>{wp.child_name}</span>{" "}
+                          · {wp.filename}
+                        </span>
+                        <span style={{ fontSize: 12, color: "var(--ink-muted)", whiteSpace: "nowrap" }}>
+                          {wp.answered} / {wp.total} · {pct.toFixed(0)}%
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          height: 6,
+                          background: "var(--surface-2)",
+                          borderRadius: 3,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: `${pct}%`,
+                            height: "100%",
+                            background:
+                              "linear-gradient(90deg, var(--violet, #8b5cf6), var(--cyan, #4ed8eb))",
+                          }}
+                        />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
 
           {/* Recent prompts */}
           <div
