@@ -33,12 +33,20 @@ type IncomingBody = {
 //   6. Forward the conversation history as-is and pipe OpenAI's response
 //      stream straight back to ElevenLabs
 export async function POST(req: Request) {
+  // DIAGNOSTIC: log every incoming header so we can see what ElevenLabs sends.
+  // Auth is currently permissive — we WARN on missing/bad token but don't block.
+  // Once we confirm ElevenLabs is sending the Bearer correctly, re-enable strict mode.
   const expected = process.env.VOICE_LLM_SHARED_SECRET;
   const auth = req.headers.get('authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
-  if (!expected || token !== expected) {
-    return Response.json({ error: 'unauthorized' }, { status: 401 });
-  }
+  const ua = req.headers.get('user-agent') ?? '';
+  const headerKeys = Array.from(req.headers.keys()).join(',');
+  const tokenStatus =
+    !auth ? 'no-auth-header'
+      : !expected ? 'no-expected-env'
+        : token === expected ? 'ok'
+          : `mismatch(len=${token.length}/${expected.length})`;
+  console.log('[voice-llm] inbound', JSON.stringify({ ua, headers: headerKeys, tokenStatus }));
 
   const openaiKey = process.env.OPENAI_API_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
