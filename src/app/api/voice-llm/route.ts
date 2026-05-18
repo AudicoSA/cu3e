@@ -104,42 +104,63 @@ export async function POST(req: Request) {
         if (!childId) {
           trace.push('no-child-id');
         } else {
-          const { data: childRow } = await supabase
-            .from('children')
-            .select('id, first_name, age, grade')
-            .eq('id', childId)
-            .maybeSingle();
-          child = (childRow as Child) ?? null;
-          if (!child) trace.push('child-not-found');
-          else {
-            trace.push(`child:${child.first_name}:${child.age}yo`);
-
-            const { data: docs } = await supabase
+          // Parallel: child row + active doc list at the same time.
+          const [childRes, docsRes] = await Promise.all([
+            supabase
+              .from('children')
+              .select('id, first_name, age, grade')
+              .eq('id', childId)
+              .maybeSingle(),
+            supabase
               .from('curriculum_documents')
               .select('storage_path, filename, created_at')
-              .eq('child_id', child.id)
+              .eq('child_id', childId)
               .eq('is_active', true)
-              .order('created_at', { ascending: false });
+              .order('created_at', { ascending: false }),
+          ]);
 
-            if (docs && docs.length > 0) {
-              const seen = new Set<string>();
-              for (const doc of docs as Array<{ storage_path: string; filename: string; created_at: string }>) {
-                if (seen.has(doc.filename)) continue;
-                seen.add(doc.filename);
+          child = (childRes.data as Child) ?? null;
+          if (!child) {
+            trace.push('child-not-found');
+          } else {
+            trace.push(`child:${child.first_name}:${child.age}yo`);
 
-                const { data: fileData, error: dlErr } = await supabase.storage
-                  .from('curriculum')
-                  .download(doc.storage_path);
-                if (dlErr || !fileData) {
-                  trace.push(`dl-err:${doc.filename}`);
-                  continue;
-                }
-                const buffer = Buffer.from(await fileData.arrayBuffer());
-                curriculumFiles.push({ filename: doc.filename, data: buffer });
-                trace.push(`attached:${doc.filename}:${buffer.length}b`);
-              }
-            } else {
+            const docs = (docsRes.data ?? []) as Array<{
+              storage_path: string;
+              filename: string;
+              created_at: string;
+            }>;
+
+            if (docs.length === 0) {
               trace.push('no-docs');
+            } else {
+              // Dedupe by filename, then download in PARALLEL — saves seconds
+              // when a child has multiple active PDFs.
+              const seen = new Set<string>();
+              const unique = docs.filter((d) => {
+                if (seen.has(d.filename)) return false;
+                seen.add(d.filename);
+                return true;
+              });
+
+              const downloads = await Promise.all(
+                unique.map(async (doc) => {
+                  const { data: fileData, error: dlErr } = await supabase.storage
+                    .from('curriculum')
+                    .download(doc.storage_path);
+                  if (dlErr || !fileData) return { err: doc.filename };
+                  const buffer = Buffer.from(await fileData.arrayBuffer());
+                  return { ok: { filename: doc.filename, data: buffer } };
+                })
+              );
+
+              for (const d of downloads) {
+                if ('err' in d) trace.push(`dl-err:${d.err}`);
+                else if (d.ok) {
+                  curriculumFiles.push(d.ok);
+                  trace.push(`attached:${d.ok.filename}:${d.ok.data.length}b`);
+                }
+              }
             }
           }
         }
@@ -171,13 +192,18 @@ export async function POST(req: Request) {
           }
         }
 
-        // 5. Stream OpenAI completion
+        // 5. Stream OpenAI completion.
+        // maxOutputTokens caps Echo at ~2-3 sentences of voice — fast AND on-brand
+        // (voice replies should be short). Cuts total response time dramatically,
+        // which matters because ElevenLabs has a hard cascade timeout (~8s) on
+        // how long it waits for our endpoint to finish streaming.
         const result = streamText({
           model: openai('gpt-4o-mini'),
           system: systemPrompt,
           messages: history,
           maxRetries: 1,
           temperature,
+          maxOutputTokens: 180,
         });
 
         for await (const delta of result.textStream) {
