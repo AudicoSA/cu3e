@@ -58,7 +58,7 @@ export default function Pricing() {
             <span className="plan-tag">Most parents</span>
             <h3>Family</h3>
             <div className="plan-price">
-              <span className="amount">R249</span>
+              <span className="amount">R499</span>
               <span className="period">/ month</span>
             </div>
             <p className="muted" style={{ fontSize: 13, margin: 0 }}>
