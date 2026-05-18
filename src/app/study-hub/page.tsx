@@ -229,6 +229,61 @@ export default function StudyHub() {
     };
   }, [supabase]);
 
+  // Promote one of this parent's uploaded PDFs into the shared library so
+  // other families can one-click-activate it. Uses a tiny chained prompt()
+  // flow for v1 — quicker than a full modal, ugly but functional.
+  const promoteDocToLibrary = useCallback(
+    async (doc: CurriculumDoc) => {
+      const region = window.prompt(
+        "Region? Type one of: CAPS, CommonCore, GCSE, IB, Other",
+        "CAPS"
+      );
+      if (!region) return;
+      const allowed = ["CAPS", "CommonCore", "GCSE", "IB", "Other"];
+      if (!allowed.includes(region)) {
+        alert(`Region must be one of: ${allowed.join(", ")}`);
+        return;
+      }
+      const grade = window.prompt("Grade? e.g. 'Grade 7' (leave blank if N/A)", "") ?? "";
+      const subject = window.prompt("Subject? e.g. 'Mathematics'", "Mathematics");
+      if (!subject) return;
+      const title = window.prompt("Short title for the library card?", doc.filename.replace(/\.pdf$/i, ""));
+      if (!title) return;
+      const description = window.prompt("One-line description? (optional)", "") ?? "";
+
+      try {
+        const r = await fetch("/api/library/promote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            document_id: doc.id,
+            region,
+            grade,
+            subject,
+            title,
+            description,
+          }),
+        });
+        const json = await r.json();
+        if (!r.ok) {
+          alert("Promote failed: " + (json.error ?? r.status));
+          return;
+        }
+        alert(`Added to the library as "${json.title}".`);
+        // Refresh library list so the new pack shows up
+        const { data } = await supabase
+          .from("curriculum_library")
+          .select("id, region, grade, subject, title, description, storage_path, source_attribution")
+          .eq("is_published", true)
+          .order("region", { ascending: true });
+        if (data) setLibrary(data as LibraryPack[]);
+      } catch (err) {
+        alert("Promote failed: " + (err instanceof Error ? err.message : "Unknown error"));
+      }
+    },
+    [supabase]
+  );
+
   // Activate a library pack — copies the metadata into curriculum_documents
   // pointing at the shared storage path. Then refreshes the active documents.
   const activateLibraryPack = useCallback(
@@ -597,6 +652,7 @@ export default function StudyHub() {
             library={library}
             activatingId={activatingId}
             onActivate={activateLibraryPack}
+            onPromote={promoteDocToLibrary}
           />
         )}
 
@@ -921,6 +977,7 @@ function Sidebar({
   library,
   activatingId,
   onActivate,
+  onPromote,
 }: {
   documents: CurriculumDoc[];
   uploadStage: 'idle' | 'uploading' | 'extracting' | 'ready' | 'error';
@@ -931,6 +988,7 @@ function Sidebar({
   library: LibraryPack[];
   activatingId: string | null;
   onActivate: (pack: LibraryPack) => void;
+  onPromote: (doc: CurriculumDoc) => void;
 }) {
   const activeStoragePaths = new Set(documents.map((d) => d.storage_path));
   const busy = uploadStage === 'uploading' || uploadStage === 'extracting';
@@ -1070,6 +1128,7 @@ function Sidebar({
                   border: "1px solid var(--border)",
                   background: "var(--bg-elev)",
                   padding: "8px 12px",
+                  gap: 8,
                 }}
               >
                 <span
@@ -1078,21 +1137,30 @@ function Sidebar({
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
-                    maxWidth: 170,
+                    flex: 1,
+                    minWidth: 0,
                   }}
                 >
                   {doc.filename}
                 </span>
-                <span
+                <button
+                  type="button"
+                  onClick={() => onPromote(doc)}
+                  title="Share this worksheet to the public library so other families can use it"
                   style={{
+                    background: "transparent",
+                    border: "1px solid var(--border)",
+                    color: "var(--ink-muted)",
                     fontFamily: "var(--font-mono)",
-                    fontSize: 10,
-                    letterSpacing: "0.14em",
-                    color: "var(--cyan)",
+                    fontSize: 9.5,
+                    letterSpacing: "0.12em",
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    cursor: "pointer",
                   }}
                 >
-                  READY
-                </span>
+                  SHARE
+                </button>
               </li>
             ))
           )}
