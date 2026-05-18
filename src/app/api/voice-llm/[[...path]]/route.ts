@@ -110,8 +110,8 @@ export async function POST(req: Request) {
             continue;
           }
           const text =
-            doc.extracted_text.length > 6000
-              ? doc.extracted_text.slice(0, 6000) + '\n…[truncated]'
+            doc.extracted_text.length > 20000
+              ? doc.extracted_text.slice(0, 20000) + '\n…[truncated]'
               : doc.extracted_text;
           curriculumTexts.push({ filename: doc.filename, text });
           trace.push(`text:${doc.filename}:${text.length}c`);
