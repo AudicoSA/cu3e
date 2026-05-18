@@ -36,17 +36,25 @@ export async function POST(req: Request) {
   // DIAGNOSTIC: log every incoming header so we can see what ElevenLabs sends.
   // Auth is currently permissive — we WARN on missing/bad token but don't block.
   // Once we confirm ElevenLabs is sending the Bearer correctly, re-enable strict mode.
+  const startedAt = Date.now();
   const expected = process.env.VOICE_LLM_SHARED_SECRET;
   const auth = req.headers.get('authorization') ?? '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : auth;
   const ua = req.headers.get('user-agent') ?? '';
-  const headerKeys = Array.from(req.headers.keys()).join(',');
+  const headerEntries: Record<string, string> = {};
+  for (const [k, v] of req.headers.entries()) {
+    if (k.toLowerCase() === 'authorization') {
+      headerEntries[k] = v ? `${v.slice(0, 12)}...(len=${v.length})` : '';
+    } else {
+      headerEntries[k] = v.slice(0, 200);
+    }
+  }
   const tokenStatus =
     !auth ? 'no-auth-header'
       : !expected ? 'no-expected-env'
         : token === expected ? 'ok'
           : `mismatch(len=${token.length}/${expected.length})`;
-  console.log('[voice-llm] inbound', JSON.stringify({ ua, headers: headerKeys, tokenStatus }));
+  console.log('[voice-llm] inbound', JSON.stringify({ ua, headerKeys: Object.keys(headerEntries).join(','), tokenStatus }));
 
   const openaiKey = process.env.OPENAI_API_KEY;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -57,11 +65,37 @@ export async function POST(req: Request) {
   }
 
   let body: IncomingBody;
+  let bodyRaw = '';
   try {
-    body = (await req.json()) as IncomingBody;
+    bodyRaw = await req.text();
+    body = JSON.parse(bodyRaw) as IncomingBody;
   } catch {
+    // Even on parse failure, write the telemetry blob so we can see what arrived
+    fireAndForgetDiag({
+      supabaseUrl,
+      serviceKey,
+      payload: { stage: 'bad-json', ua, headers: headerEntries, tokenStatus, bodyPreview: bodyRaw.slice(0, 2000), elapsedMs: Date.now() - startedAt },
+    });
     return Response.json({ error: 'bad json' }, { status: 400 });
   }
+
+  // Tap: every inbound request gets a small JSON blob written to Supabase
+  // Storage so we can confirm IF ElevenLabs is actually hitting us, and SEE
+  // exactly what it sends.
+  fireAndForgetDiag({
+    supabaseUrl,
+    serviceKey,
+    payload: {
+      stage: 'inbound',
+      ua,
+      headers: headerEntries,
+      tokenStatus,
+      bodyKeys: Object.keys(body || {}),
+      messageCount: body?.messages?.length ?? 0,
+      firstSystemPreview: (body?.messages?.[0]?.content ?? '').slice(0, 400),
+      elapsedMs: Date.now() - startedAt,
+    },
+  });
 
   const incoming = body.messages ?? [];
   if (incoming.length === 0) {
@@ -209,6 +243,34 @@ export async function POST(req: Request) {
 }
 
 // ---- Helpers -----------------------------------------------------------
+
+// Tap: upload a small JSON blob to the `curriculum` bucket under _voice_debug/.
+// Fire-and-forget — we never block the actual LLM response on this.
+function fireAndForgetDiag(args: {
+  supabaseUrl: string;
+  serviceKey: string;
+  payload: Record<string, unknown>;
+}) {
+  const { supabaseUrl, serviceKey, payload } = args;
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const rand = Math.random().toString(36).slice(2, 8);
+  const path = `_voice_debug/${ts}-${rand}.json`;
+  const url = `${supabaseUrl}/storage/v1/object/curriculum/${path}`;
+  const body = JSON.stringify({ ts: new Date().toISOString(), ...payload }, null, 2);
+
+  fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${serviceKey}`,
+      apikey: serviceKey,
+      'Content-Type': 'application/json',
+      'x-upsert': 'true',
+    },
+    body,
+  }).catch((e) => {
+    console.error('[voice-llm] diag upload failed', e?.message ?? String(e));
+  });
+}
 
 function parseMeta(systemPrompt: string): { child_id?: string; parent_id?: string } {
   const block = /\[CU3E_META\]([\s\S]*?)\[\/CU3E_META\]/.exec(systemPrompt);
