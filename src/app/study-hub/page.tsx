@@ -105,6 +105,9 @@ export default function StudyHub() {
   // we compare distinct correct-answer rows against its question_count.
   const [progress, setProgress] = useState<{ answered: number; total: number; docFilename: string } | null>(null);
 
+  // Share-to-library modal: when non-null, opens the form for that doc.
+  const [shareDoc, setShareDoc] = useState<CurriculumDoc | null>(null);
+
   // Curriculum library (shared catalog)
   const [library, setLibrary] = useState<LibraryPack[]>([]);
   const [activatingId, setActivatingId] = useState<string | null>(null);
@@ -229,60 +232,20 @@ export default function StudyHub() {
     };
   }, [supabase]);
 
-  // Promote one of this parent's uploaded PDFs into the shared library so
-  // other families can one-click-activate it. Uses a tiny chained prompt()
-  // flow for v1 — quicker than a full modal, ugly but functional.
-  const promoteDocToLibrary = useCallback(
-    async (doc: CurriculumDoc) => {
-      const region = window.prompt(
-        "Region? Type one of: CAPS, CommonCore, GCSE, IB, Other",
-        "CAPS"
-      );
-      if (!region) return;
-      const allowed = ["CAPS", "CommonCore", "GCSE", "IB", "Other"];
-      if (!allowed.includes(region)) {
-        alert(`Region must be one of: ${allowed.join(", ")}`);
-        return;
-      }
-      const grade = window.prompt("Grade? e.g. 'Grade 7' (leave blank if N/A)", "") ?? "";
-      const subject = window.prompt("Subject? e.g. 'Mathematics'", "Mathematics");
-      if (!subject) return;
-      const title = window.prompt("Short title for the library card?", doc.filename.replace(/\.pdf$/i, ""));
-      if (!title) return;
-      const description = window.prompt("One-line description? (optional)", "") ?? "";
+  // Open the share modal for a given doc; submission lives in ShareModal.
+  const promoteDocToLibrary = useCallback((doc: CurriculumDoc) => {
+    setShareDoc(doc);
+  }, []);
 
-      try {
-        const r = await fetch("/api/library/promote", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            document_id: doc.id,
-            region,
-            grade,
-            subject,
-            title,
-            description,
-          }),
-        });
-        const json = await r.json();
-        if (!r.ok) {
-          alert("Promote failed: " + (json.error ?? r.status));
-          return;
-        }
-        alert(`Added to the library as "${json.title}".`);
-        // Refresh library list so the new pack shows up
-        const { data } = await supabase
-          .from("curriculum_library")
-          .select("id, region, grade, subject, title, description, storage_path, source_attribution")
-          .eq("is_published", true)
-          .order("region", { ascending: true });
-        if (data) setLibrary(data as LibraryPack[]);
-      } catch (err) {
-        alert("Promote failed: " + (err instanceof Error ? err.message : "Unknown error"));
-      }
-    },
-    [supabase]
-  );
+  // Called by ShareModal once promotion succeeds — refresh the library list.
+  const refreshLibrary = useCallback(async () => {
+    const { data } = await supabase
+      .from("curriculum_library")
+      .select("id, region, grade, subject, title, description, storage_path, source_attribution")
+      .eq("is_published", true)
+      .order("region", { ascending: true });
+    if (data) setLibrary(data as LibraryPack[]);
+  }, [supabase]);
 
   // Activate a library pack — copies the metadata into curriculum_documents
   // pointing at the shared storage path. Then refreshes the active documents.
@@ -630,6 +593,12 @@ export default function StudyHub() {
         childId={selectedChildId}
       />
 
+      <ShareModal
+        doc={shareDoc}
+        onClose={() => setShareDoc(null)}
+        onPromoted={refreshLibrary}
+      />
+
       {/* Body */}
       <div
         className="hub-body"
@@ -920,6 +889,225 @@ export default function StudyHub() {
 // ---------------------------------------------------------------------------
 // Subcomponents
 // ---------------------------------------------------------------------------
+
+function ShareModal({
+  doc,
+  onClose,
+  onPromoted,
+}: {
+  doc: CurriculumDoc | null;
+  onClose: () => void;
+  onPromoted: () => void;
+}) {
+  const [region, setRegion] = useState<string>("CAPS");
+  const [grade, setGrade] = useState<string>("");
+  const [subject, setSubject] = useState<string>("Mathematics");
+  const [title, setTitle] = useState<string>("");
+  const [description, setDescription] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (doc) {
+      setTitle(doc.filename.replace(/\.pdf$/i, ""));
+      setGrade("");
+      setSubject("Mathematics");
+      setRegion("CAPS");
+      setDescription("");
+      setError(null);
+    }
+  }, [doc]);
+
+  if (!doc) return null;
+
+  const submit = async () => {
+    if (!title.trim() || !subject.trim()) {
+      setError("Title and subject are required.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const r = await fetch("/api/library/promote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          document_id: doc.id,
+          region,
+          grade,
+          subject,
+          title,
+          description,
+        }),
+      });
+      const json = await r.json();
+      if (!r.ok) {
+        setError(json.error ?? `Status ${r.status}`);
+        return;
+      }
+      onPromoted();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const fieldStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "10px 12px",
+    fontSize: 14,
+    background: "var(--surface)",
+    border: "1px solid var(--border-strong)",
+    borderRadius: 8,
+    color: "var(--ink)",
+    fontFamily: "var(--font-sans)",
+  };
+  const labelStyle: React.CSSProperties = {
+    display: "block",
+    fontSize: 12,
+    color: "var(--ink-muted)",
+    marginBottom: 6,
+    fontWeight: 500,
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Share to library"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(7, 8, 13, 0.7)",
+        backdropFilter: "blur(8px)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        zIndex: 300,
+      }}
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%",
+          maxWidth: 480,
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-lg)",
+          padding: 28,
+          display: "flex",
+          flexDirection: "column",
+          gap: 20,
+        }}
+      >
+        <div>
+          <span className="eyebrow">Share to library</span>
+          <h3 style={{ marginTop: 8, fontSize: 22, fontWeight: 600, letterSpacing: "-0.01em" }}>
+            {doc.filename}
+          </h3>
+          <p style={{ marginTop: 6, fontSize: 13, color: "var(--ink-muted)", lineHeight: 1.5 }}>
+            Make this worksheet available to other CU3E families as a one-click pack.
+          </p>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div>
+            <label style={labelStyle}>Region</label>
+            <select value={region} onChange={(e) => setRegion(e.target.value)} style={fieldStyle}>
+              <option value="CAPS">CAPS (South Africa)</option>
+              <option value="CommonCore">Common Core (US)</option>
+              <option value="GCSE">GCSE (UK)</option>
+              <option value="IB">IB</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Grade</label>
+            <input
+              type="text"
+              value={grade}
+              onChange={(e) => setGrade(e.target.value)}
+              placeholder="Grade 7"
+              style={fieldStyle}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label style={labelStyle}>Subject</label>
+          <input
+            type="text"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder="Mathematics"
+            style={fieldStyle}
+          />
+        </div>
+
+        <div>
+          <label style={labelStyle}>Title</label>
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder="Fractions of a group — worksheet"
+            style={fieldStyle}
+          />
+        </div>
+
+        <div>
+          <label style={labelStyle}>One-line description (optional)</label>
+          <input
+            type="text"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What's on the worksheet — for other parents browsing the library."
+            style={fieldStyle}
+          />
+        </div>
+
+        {error && (
+          <div
+            style={{
+              fontSize: 13,
+              color: "#f87171",
+              background: "rgba(248,113,113,0.08)",
+              border: "1px solid rgba(248,113,113,0.3)",
+              padding: "10px 12px",
+              borderRadius: 8,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={onClose}
+            disabled={submitting}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="btn btn-violet"
+            onClick={submit}
+            disabled={submitting}
+            style={{ opacity: submitting ? 0.6 : 1 }}
+          >
+            {submitting ? "Sharing…" : "Add to library"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
   const opts: { value: Mode; label: string }[] = [
