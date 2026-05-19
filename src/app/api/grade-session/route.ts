@@ -1,8 +1,7 @@
 import { generateObject } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
-import { createServerClient, type CookieMethodsServerDeprecated } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createClient } from '@/utils/supabase/server';
 
 export const maxDuration = 30;
 
@@ -22,18 +21,7 @@ const GradeSchema = z.object({
 // One grade per conversation_id (enforced by unique constraint). If a grade
 // already exists, returns the existing one.
 export async function POST(req: Request) {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-      } as CookieMethodsServerDeprecated,
-    }
-  );
+  const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {

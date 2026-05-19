@@ -1,7 +1,10 @@
 import { type NextRequest } from 'next/server'
 import { updateSession } from '@/utils/supabase/middleware'
 
-export async function middleware(request: NextRequest) {
+// Renamed from middleware.ts per Next 16's new `proxy` file convention.
+// The helper at @/utils/supabase/middleware keeps its name for now to avoid
+// churn — it's just the cookie-syncing + auth-redirect logic.
+export async function proxy(request: NextRequest) {
   return await updateSession(request)
 }
 
@@ -12,7 +15,6 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
      */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],

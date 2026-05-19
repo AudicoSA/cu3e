@@ -383,6 +383,9 @@ export default function StudyHub() {
         storySoFar,
         age: selectedChild?.age ?? null,
         mode: "storybook",
+        // Tag the image with the chat conversation so we can group scenes
+        // later in a gallery / revisit-stories view.
+        conversationId: chatId,
       }),
     })
       .then(async (r) => {

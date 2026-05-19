@@ -1,5 +1,4 @@
-import { createServerClient, type CookieMethodsServerDeprecated } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createClient } from '@/utils/supabase/server';
 import { randomUUID } from 'node:crypto';
 
 export const maxDuration = 30;
@@ -18,18 +17,7 @@ type Body = {
 // Persists a completed voice conversation as chat_messages rows with mode='voice'.
 // Called by the client when a voice session ends.
 export async function POST(req: Request) {
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-      } as CookieMethodsServerDeprecated,
-    }
-  );
+  const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {

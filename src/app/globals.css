@@ -195,6 +195,21 @@ button { font: inherit; cursor: pointer; }
   overflow: hidden;
   position: relative;
   box-shadow: 0 0 0 1px var(--border-strong);
+  animation: echo-idle 4.5s ease-in-out infinite;
+  transform-origin: 50% 100%;
+}
+
+@keyframes echo-idle {
+  0%   { transform: translateY(0)     rotate(0deg); }
+  25%  { transform: translateY(-1.5px) rotate(-1.2deg); }
+  50%  { transform: translateY(0)     rotate(0deg); }
+  75%  { transform: translateY(-1.5px) rotate(1.2deg); }
+  100% { transform: translateY(0)     rotate(0deg); }
+}
+
+/* Respect users who prefer no motion */
+@media (prefers-reduced-motion: reduce) {
+  .brand-mark { animation: none; }
 }
 .nav-links {
   display: flex;

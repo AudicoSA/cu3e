@@ -1,7 +1,7 @@
 import { experimental_generateImage as generateImage } from 'ai';
 import { google } from '@ai-sdk/google';
-import { createServerClient, type CookieMethodsServerDeprecated } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js';
+import { createClient } from '@/utils/supabase/server';
 
 export const maxDuration = 30;
 
@@ -12,24 +12,14 @@ type Body = {
   storySoFar?: string;
   age?: number | null;
   mode?: Mode;
+  conversationId?: string;
 };
 
 export async function POST(req: Request) {
   const body = (await req.json()) as Body;
 
   // Auth gate — we don't want unauthenticated clients hammering image gen.
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-      } as CookieMethodsServerDeprecated,
-    }
-  );
+  const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
     return Response.json({ error: 'unauthorized' }, { status: 401 });
@@ -69,10 +59,35 @@ Composition: single illustrated scene, no text, no captions, no speech bubbles, 
       aspectRatio: '4:3',
     });
 
-    // Image is a GeneratedFile; return base64 data URL the client can render
-    // directly without us needing storage.
     const dataUrl = `data:${image.mediaType};base64,${image.base64}`;
-    return Response.json({ image: dataUrl });
+
+    // Persist to Supabase storage so kids can revisit illustrated stories
+    // later. Path: <parent_id>/<conversation_id>/<ts>.png
+    // Failures here are non-fatal — we still return the dataUrl for display.
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    let storagePath: string | null = null;
+    if (supabaseUrl && serviceKey && body.conversationId) {
+      const ts = Date.now();
+      const ext = image.mediaType === 'image/jpeg' ? 'jpg' : image.mediaType === 'image/webp' ? 'webp' : 'png';
+      storagePath = `${user.id}/${body.conversationId}/${ts}.${ext}`;
+      const admin = createSupabaseAdmin(supabaseUrl, serviceKey, {
+        auth: { autoRefreshToken: false, persistSession: false },
+      });
+      const buffer = Buffer.from(image.base64, 'base64');
+      const { error: upErr } = await admin.storage
+        .from('story-images')
+        .upload(storagePath, buffer, {
+          contentType: image.mediaType,
+          upsert: false,
+        });
+      if (upErr) {
+        console.warn('[story-image] storage upload failed:', upErr.message);
+        storagePath = null;
+      }
+    }
+
+    return Response.json({ image: dataUrl, storagePath });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error('[story-image] generate failed:', msg);

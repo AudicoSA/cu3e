@@ -1,8 +1,7 @@
 import { streamText, generateText, type ModelMessage } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
-import { createServerClient, type CookieMethodsServerDeprecated } from '@supabase/ssr';
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js';
-import { cookies } from 'next/headers';
+import { createClient } from '@/utils/supabase/server';
 import { randomUUID } from 'node:crypto';
 
 export const maxDuration = 30;
@@ -61,18 +60,7 @@ export async function POST(req: Request) {
     }
   }
 
-  const cookieStore = await cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return cookieStore.get(name)?.value;
-        },
-      } as CookieMethodsServerDeprecated,
-    }
-  );
+  const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
   const curriculumFiles: CurriculumFile[] = [];
