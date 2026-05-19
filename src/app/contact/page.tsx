@@ -19,22 +19,22 @@ export default function ContactPage() {
       <div style={{ marginTop: 40, display: "flex", flexDirection: "column", gap: 16 }}>
         <ContactCard
           label="General questions"
-          email="hello@cu3e.com"
+          email="hello@cu3e.co.za"
           desc="If you're a parent thinking about using CU3E, or a teacher curious how it might work in your classroom."
         />
         <ContactCard
           label="For schools"
-          email="schools@cu3e.com"
+          email="schools@cu3e.co.za"
           desc="Volume pricing, teacher cockpits, integration with existing learning systems."
         />
         <ContactCard
           label="Privacy / data"
-          email="privacy@cu3e.com"
+          email="privacy@cu3e.co.za"
           desc="Any concern about your child's data, account deletion, or compliance."
         />
         <ContactCard
           label="Press / partnership"
-          email="kenny@cu3e.com"
+          email="kenny@cu3e.co.za"
           desc="Reach the founder directly."
         />
       </div>

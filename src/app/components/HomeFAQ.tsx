@@ -48,7 +48,7 @@ export default function HomeFAQ() {
           </h2>
           <p style={{ color: "var(--ink-soft)", marginTop: 20, fontSize: 14.5, lineHeight: 1.6 }}>
             Don&apos;t see yours? Echo&apos;s team replies within a day. Reach us at{" "}
-            <a href="mailto:parents@cu3e.com" style={{ color: "var(--violet)" }}>parents@cu3e.com</a>.
+            <a href="mailto:parents@cu3e.co.za" style={{ color: "var(--violet)" }}>parents@cu3e.co.za</a>.
           </p>
         </div>
         <div>

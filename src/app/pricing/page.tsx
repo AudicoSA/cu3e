@@ -133,7 +133,7 @@ export default function Pricing() {
         >
           Schools and homeschool groups —{" "}
           <a
-            href="mailto:schools@cu3e.com"
+            href="mailto:schools@cu3e.co.za"
             style={{ color: "var(--violet)", fontWeight: 500 }}
           >
             talk to us about volume pricing

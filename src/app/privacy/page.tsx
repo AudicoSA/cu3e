@@ -66,7 +66,7 @@ export default function PrivacyPage() {
 
       <Section title="Contact">
         <p>
-          Email <a href="mailto:privacy@cu3e.com" style={{ color: "var(--violet)" }}>privacy@cu3e.com</a>{" "}
+          Email <a href="mailto:privacy@cu3e.co.za" style={{ color: "var(--violet)" }}>privacy@cu3e.co.za</a>{" "}
           with any privacy concerns. We respond within one business day.
         </p>
       </Section>
