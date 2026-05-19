@@ -47,7 +47,7 @@ export default function HomeFAQ() {
             Questions <span className="serif-italic accent">parents actually ask.</span>
           </h2>
           <p style={{ color: "var(--ink-soft)", marginTop: 20, fontSize: 14.5, lineHeight: 1.6 }}>
-            Don&apos;t see yours? Echo&apos;s team replies within a day. Reach us at{" "}
+            Don&apos;t see yours? Kenny — the founder — replies within a day. Reach him at{" "}
             <a href="mailto:parents@cu3e.co.za" style={{ color: "var(--violet)" }}>parents@cu3e.co.za</a>.
           </p>
         </div>

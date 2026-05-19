@@ -34,7 +34,7 @@ export default function Home() {
             <p className="hero-sub">
               Echo helps your kid work through real homework, Socratically, no shortcuts.
               In the background, every conversation builds the AI-fluency that no school is
-              teaching yet. The parents who try CU3E rarely go back.
+              teaching yet. Built with my own two daughters as the first users.
             </p>
             <div className="hero-cta-row">
               <a href="/register" className="btn btn-violet btn-lg">
