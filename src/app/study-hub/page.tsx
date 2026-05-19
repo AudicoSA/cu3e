@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
 import VoiceTalk from "../components/VoiceTalk";
+import { useVoiceAugment } from "@/hooks/useVoiceAugment";
 
 type Child = {
   id: string;
@@ -107,6 +108,10 @@ export default function StudyHub() {
 
   // Share-to-library modal: when non-null, opens the form for that doc.
   const [shareDoc, setShareDoc] = useState<CurriculumDoc | null>(null);
+
+  // Voice-augment mode: kid can talk OR type. When ON, Echo's text turns are
+  // spoken aloud, and the mic is continuously transcribing into the input.
+  const [voiceAugmentOn, setVoiceAugmentOn] = useState(false);
 
   // Curriculum library (shared catalog)
   const [library, setLibrary] = useState<LibraryPack[]>([]);
@@ -415,6 +420,17 @@ export default function StudyHub() {
     [isLoading, selectedChildId, sendMessage]
   );
 
+  // Voice-augment: hands-free conversation alongside the text chat. Echo's
+  // turns are spoken aloud as they stream; the kid's mic is continuously
+  // transcribed into the input and auto-submitted on pause.
+  useVoiceAugment({
+    enabled: voiceAugmentOn,
+    messages,
+    isLoading,
+    onInterim: (text) => setInput(text),
+    onUserSpeech: (text) => send(text),
+  });
+
   // Auto-send launch prompt
   useEffect(() => {
     if (!pendingPrompt) return;
@@ -647,12 +663,49 @@ export default function StudyHub() {
                 {isLoading ? "Thinking…" : "Ready"}
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setVoiceAugmentOn((v) => !v)}
+              title={
+                voiceAugmentOn
+                  ? "Voice mode ON — Echo speaks, mic listens. Tap to turn off."
+                  : "Voice mode OFF — tap to let Echo speak and the mic listen."
+              }
+              aria-label={voiceAugmentOn ? "Disable voice mode" : "Enable voice mode"}
+              aria-pressed={voiceAugmentOn}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 999,
+                border: `1px solid ${voiceAugmentOn ? "var(--violet)" : "var(--border-strong)"}`,
+                background: voiceAugmentOn ? "var(--violet)" : "transparent",
+                color: voiceAugmentOn ? "#0a0b10" : "var(--ink-muted)",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                transition: "background 150ms ease, color 150ms ease, border-color 150ms ease",
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                <line x1="12" y1="19" x2="12" y2="23" />
+                <line x1="8" y1="23" x2="16" y2="23" />
+              </svg>
+            </button>
             <span className="pill">
               <span
                 className="dot"
-                style={isLoading ? { background: "var(--amber)", boxShadow: "0 0 0 4px rgba(240,179,64,0.15)" } : undefined}
+                style={
+                  voiceAugmentOn
+                    ? { background: "var(--violet)", boxShadow: "0 0 0 4px rgba(138,107,255,0.18)" }
+                    : isLoading
+                      ? { background: "var(--amber)", boxShadow: "0 0 0 4px rgba(240,179,64,0.15)" }
+                      : undefined
+                }
               />
-              {isLoading ? "Live" : "Ready"}
+              {voiceAugmentOn ? "Voice" : isLoading ? "Live" : "Ready"}
             </span>
           </div>
 
@@ -838,7 +891,9 @@ export default function StudyHub() {
                 className="field"
                 style={{ paddingRight: 48 }}
                 placeholder={
-                  mode === "tutor"
+                  voiceAugmentOn
+                    ? "Listening… or just type."
+                    : mode === "tutor"
                     ? "Pitch your idea to Echo…"
                     : mode === "storybook"
                     ? "What happens next?"
