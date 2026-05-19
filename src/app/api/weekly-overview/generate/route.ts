@@ -1,5 +1,6 @@
 import { generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js';
 import { createClient } from '@/utils/supabase/server';
 
 export const maxDuration = 60;
@@ -132,10 +133,26 @@ Do NOT use kid quotes verbatim if they're embarrassing — paraphrase. Be a good
   }
 
   const audioBuffer = Buffer.from(await ttsResponse.arrayBuffer());
+  if (audioBuffer.length === 0) {
+    console.error('[weekly-overview] empty audio buffer from ElevenLabs');
+    return Response.json({ error: 'tts_empty_audio' }, { status: 500 });
+  }
 
   // 5. Upload audio to Supabase Storage ("overviews" bucket, per-user folder).
+  // Use the service-role admin client — this is a server-only operation, no
+  // need to depend on the parent's RLS policies firing correctly. Also gives
+  // us a real error message we can show the user if anything breaks.
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) {
+    return Response.json({ error: 'storage not configured' }, { status: 500 });
+  }
+  const admin = createSupabaseAdmin(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
   const storagePath = `${user.id}/${Date.now()}.mp3`;
-  const { error: uploadError } = await supabase.storage
+  const { error: uploadError } = await admin.storage
     .from('overviews')
     .upload(storagePath, audioBuffer, {
       contentType: 'audio/mpeg',
@@ -144,18 +161,27 @@ Do NOT use kid quotes verbatim if they're embarrassing — paraphrase. Be a good
 
   if (uploadError) {
     console.error('[weekly-overview] upload failed:', uploadError.message);
-    // Still return the transcript so the parent can read it — audio is nice-to-have.
+    // Audio is the whole point — surface the failure rather than silently
+    // returning a transcript-only result the user can't tell apart from "no
+    // activity this week".
+    return Response.json(
+      {
+        error: 'audio_upload_failed',
+        detail: uploadError.message,
+      },
+      { status: 500 }
+    );
   }
 
   // 6. Persist the record.
-  const { data: inserted, error: insertError } = await supabase
+  const { data: inserted, error: insertError } = await admin
     .from('weekly_overviews')
     .insert({
       parent_id: user.id,
       period_start: periodStart.toISOString(),
       period_end: periodEnd.toISOString(),
       transcript,
-      audio_storage_path: uploadError ? null : storagePath,
+      audio_storage_path: storagePath,
       message_count: messageList.length,
     })
     .select('id')
@@ -166,13 +192,10 @@ Do NOT use kid quotes verbatim if they're embarrassing — paraphrase. Be a good
   }
 
   // 7. Return everything the client needs to play it.
-  let audioUrl: string | null = null;
-  if (!uploadError) {
-    const { data: signedUrlData } = await supabase.storage
-      .from('overviews')
-      .createSignedUrl(storagePath, 60 * 60); // valid 1h
-    audioUrl = signedUrlData?.signedUrl ?? null;
-  }
+  const { data: signedUrlData } = await admin.storage
+    .from('overviews')
+    .createSignedUrl(storagePath, 60 * 60); // valid 1h
+  const audioUrl = signedUrlData?.signedUrl ?? null;
 
   return Response.json({
     id: inserted?.id ?? null,
