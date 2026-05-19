@@ -64,6 +64,49 @@ export function useVoiceAugment({
   const isSpeakingRef = useRef(false);
   const recognitionRef = useRef<MinimalSpeechRecognition | null>(null);
   const wantsListeningRef = useRef(false);
+  const preferredVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
+
+  // Pick the best-sounding available browser voice once voices are loaded.
+  // Browsers expose voices asynchronously, so we have to wait for the
+  // voiceschanged event before they're populated.
+  useEffect(() => {
+    if (!enabled) return;
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+
+    const pickVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      if (voices.length === 0) return;
+
+      // Preference order — earlier matches win. Goal: a natural-sounding
+      // female English voice. Falls back to anything English if none match.
+      const preferenceOrder: Array<(v: SpeechSynthesisVoice) => boolean> = [
+        (v) => /Google UK English Female/i.test(v.name),
+        (v) => /Microsoft Aria/i.test(v.name) && /Natural/i.test(v.name),
+        (v) => /Microsoft Jenny/i.test(v.name) && /Natural/i.test(v.name),
+        (v) => /Google US English/i.test(v.name),
+        (v) => /Samsung.*Female/i.test(v.name) && /en/i.test(v.lang),
+        (v) => /Karen|Tessa|Moira|Samantha/i.test(v.name) && /en/i.test(v.lang),
+        (v) => /female/i.test(v.name) && /en/i.test(v.lang),
+        (v) => /en[-_]?(US|GB|AU|ZA)/i.test(v.lang),
+        (v) => /^en/i.test(v.lang),
+      ];
+
+      for (const test of preferenceOrder) {
+        const match = voices.find(test);
+        if (match) {
+          preferredVoiceRef.current = match;
+          return;
+        }
+      }
+      preferredVoiceRef.current = voices[0] ?? null;
+    };
+
+    pickVoice();
+    window.speechSynthesis.onvoiceschanged = pickVoice;
+    return () => {
+      window.speechSynthesis.onvoiceschanged = null;
+    };
+  }, [enabled]);
 
   // ----- TTS effect — speak new assistant text as it streams -----
   useEffect(() => {
@@ -105,6 +148,7 @@ export function useVoiceAugment({
       const utter = new SpeechSynthesisUtterance(trimmed);
       utter.rate = 1.0;
       utter.pitch = 1.05;
+      if (preferredVoiceRef.current) utter.voice = preferredVoiceRef.current;
       utter.onstart = () => {
         isSpeakingRef.current = true;
         // Pause the mic while Echo is talking so it doesn't transcribe her.
@@ -165,25 +209,55 @@ export function useVoiceAugment({
     }
 
     const rec = new SR();
-    rec.continuous = false; // browsers handle continuous unreliably; auto-restart on end instead
+    rec.continuous = true; // stay listening across pauses; we manage flush ourselves
     rec.interimResults = true;
     rec.lang = "en-US";
 
+    // Accumulate finalized phrases until the kid has been silent long enough
+    // that she's clearly done talking, then flush as one send().
+    let finalBuffer = "";
+    let silenceTimer: ReturnType<typeof setTimeout> | null = null;
+    const SILENCE_MS = 1400;
+
+    const flush = () => {
+      const text = finalBuffer.trim();
+      finalBuffer = "";
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
+      }
+      if (text) onUserSpeech(text);
+    };
+
+    const armSilence = () => {
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(flush, SILENCE_MS);
+    };
+
     rec.onresult = (event: SpeechRecognitionEvent) => {
       let interim = "";
-      let final = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const res = event.results[i];
         const transcript = res[0].transcript;
-        if (res.isFinal) final += transcript;
-        else interim += transcript;
+        if (res.isFinal) {
+          finalBuffer += (finalBuffer ? " " : "") + transcript.trim();
+        } else {
+          interim += transcript;
+        }
       }
-      if (interim) onInterim(interim);
-      if (final.trim()) onUserSpeech(final.trim());
+      // Show whatever we've heard so far (final accumulator + current interim)
+      // so the kid sees her words appear live.
+      const liveText = (finalBuffer + " " + interim).trim();
+      if (liveText) onInterim(liveText);
+      // Any speech activity resets the silence timer.
+      armSilence();
     };
 
     rec.onend = () => {
-      // Auto-restart unless we've been disabled or Echo is currently speaking.
+      // Recognition session ended naturally (some browsers stop after long
+      // silence even with continuous=true). Flush whatever we have and
+      // restart unless disabled / Echo speaking.
+      if (finalBuffer.trim()) flush();
       if (
         wantsListeningRef.current &&
         !isSpeakingRef.current &&
