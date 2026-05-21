@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   title: "CU3E — The AI tutor that won't do your kid's homework",
   description:
     "CU3E turns your child's actual schoolwork into real thinking — and quietly raises them to be fluent with the tools that will define their adult lives. Aligned with CAPS, Common Core, GCSE & IB.",
-  // Limited beta — don't index until we're ready for a public launch.
+  // Early access — don't index until we're ready for a public launch.
   robots: { index: false, follow: false },
 };
 
@@ -85,7 +85,7 @@ export default async function RootLayout({
                   CU3E
                 </span>
                 <span className="muted" style={{ marginLeft: 16 }}>
-                  Limited beta · sharing welcome · public launch later.
+                  Early access · public launch later.
                 </span>
               </div>
               <div className="links">

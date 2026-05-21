@@ -34,7 +34,7 @@ export default function Home() {
             <p className="hero-sub">
               Echo helps your kid work through real homework, Socratically, no shortcuts.
               In the background, every conversation builds the AI-fluency that no school is
-              teaching yet. Built with my own two daughters as the first users.
+              teaching yet.
             </p>
             <div className="hero-cta-row">
               <a href="/register" className="btn btn-violet btn-lg">
@@ -272,7 +272,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ---------- FOUNDER NOTE ---------- */}
+      {/* ---------- WHY THIS EXISTS ---------- */}
       <section className="testi">
         <div className="container">
           <div className="testi-head">
@@ -297,7 +297,7 @@ export default function Home() {
               <div className="author">
                 <div className="author-avatar" style={{ background: "#3a3530", color: "var(--cream)" }}>K</div>
                 <div>
-                  <div className="author-name">Kenny — founder</div>
+                  <div className="author-name">Kenny</div>
                   <div className="author-meta">Dad of two · Ballito, South Africa</div>
                 </div>
               </div>
@@ -479,7 +479,7 @@ export default function Home() {
                   color: "var(--cyan)",
                 }}
               >
-                Founder pricing · early-access only
+                Early-access pricing · launch soon
               </p>
               <p className="muted" style={{ fontSize: 13, margin: 0 }}>
                 Each child gets their own Echo — adapted to their age, curriculum, and pace.

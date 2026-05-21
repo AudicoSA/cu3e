@@ -12,15 +12,14 @@ export default function ContactPage() {
       </h1>
 
       <p style={{ marginTop: 24, color: "var(--ink-soft)", fontSize: 17, lineHeight: 1.65 }}>
-        CU3E is small. A real person reads everything that comes in — usually the
-        founder. No support queue, no help-desk wall.
+        Pick the right channel below — your message goes straight to the team that can act on it. No support queue, no chatbot loops.
       </p>
 
       <div style={{ marginTop: 40, display: "flex", flexDirection: "column", gap: 16 }}>
         <ContactCard
           label="General questions"
           email="hello@cu3e.co.za"
-          desc="If you're a parent thinking about using CU3E, or a teacher curious how it might work in your classroom."
+          desc="Parents, teachers, or anyone curious about how CU3E works."
         />
         <ContactCard
           label="For schools"
@@ -30,12 +29,12 @@ export default function ContactPage() {
         <ContactCard
           label="Privacy / data"
           email="privacy@cu3e.co.za"
-          desc="Any concern about your child's data, account deletion, or compliance."
+          desc="Questions about your child's data, account deletion, or compliance."
         />
         <ContactCard
-          label="Press / partnership"
-          email="kenny@cu3e.co.za"
-          desc="Reach the founder directly."
+          label="Press / partnerships"
+          email="partnerships@cu3e.co.za"
+          desc="Media inquiries, school-district pilots, and integration partners."
         />
       </div>
 
@@ -48,7 +47,7 @@ export default function ContactPage() {
           letterSpacing: "0.06em",
         }}
       >
-        Limited beta · email response within one business day
+        Email response within one business day
       </p>
     </section>
   );

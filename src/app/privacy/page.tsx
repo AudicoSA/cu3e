@@ -12,9 +12,8 @@ export default function PrivacyPage() {
       </h1>
 
       <p style={{ marginTop: 24, color: "var(--ink-soft)", fontSize: 16, lineHeight: 1.65 }}>
-        CU3E is in limited beta. This page is the honest version of what we do today
-        and what we&apos;re committing to before public launch. If anything here changes,
-        we&apos;ll update this page.
+        This page is the honest version of what we do today and what we&apos;re committing
+        to before public launch. If anything here changes, we&apos;ll update this page.
       </p>
 
       <Section title="What we collect">
@@ -72,7 +71,7 @@ export default function PrivacyPage() {
       </Section>
 
       <p style={{ marginTop: 48, fontSize: 12, color: "var(--ink-muted)", fontFamily: "var(--font-mono)", letterSpacing: "0.06em" }}>
-        Last updated · beta · this is a working draft
+        Last updated · this page evolves as our practices do
       </p>
     </section>
   );

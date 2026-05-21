@@ -25,7 +25,7 @@ const FAQS = [
   },
   {
     q: "Is CU3E available today?",
-    a: "We're in limited beta. The founder is using it with his own daughters (6 and 12) and a handful of friends. If you sign up now, you're early — expect rough edges, real conversations with the founder, and a real say in what gets built next.",
+    a: "We're in early access. CU3E is being tested with a small group of families ahead of broader public launch. Sign up now and you're early — expect occasional rough edges, direct contact with the team, and real input on what gets built next.",
   },
   {
     q: "What about the Edu-Box / Raspberry Pi tier?",
@@ -47,8 +47,9 @@ export default function HomeFAQ() {
             Questions <span className="serif-italic accent">parents actually ask.</span>
           </h2>
           <p style={{ color: "var(--ink-soft)", marginTop: 20, fontSize: 14.5, lineHeight: 1.6 }}>
-            Don&apos;t see yours? Kenny — the founder — replies within a day. Reach him at{" "}
-            <a href="mailto:parents@cu3e.co.za" style={{ color: "var(--violet)" }}>parents@cu3e.co.za</a>.
+            Don&apos;t see yours? Email us at{" "}
+            <a href="mailto:parents@cu3e.co.za" style={{ color: "var(--violet)" }}>parents@cu3e.co.za</a>
+            {" "}— we reply within a day.
           </p>
         </div>
         <div>

@@ -88,7 +88,7 @@ export default function Pricing() {
                 color: "var(--cyan)",
               }}
             >
-              Founder pricing · early-access only
+              Early-access pricing · launch soon
             </p>
             <p className="muted" style={{ fontSize: 13, margin: 0 }}>
               Each child gets their own Echo — adapted to their age, curriculum, and pace. Cheaper than a single hour of human tutoring.
