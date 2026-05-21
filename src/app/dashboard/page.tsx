@@ -722,7 +722,7 @@ export default async function Dashboard() {
             <AddChildForm />
           </div>
 
-          {/* Edu-Box */}
+          {/* CU3E Tablet — honest tease of the kiosk hardware in development */}
           <div
             style={{
               background: "var(--surface)",
@@ -740,14 +740,21 @@ export default async function Dashboard() {
               }}
             >
               <h3 className="h-section" style={{ fontSize: 22, lineHeight: 1.2, margin: 0 }}>
-                Edu-Box
+                CU3E Tablet
               </h3>
-              <span className="pill">
-                <span className="dot" />
-                Online
+              <span
+                className="pill"
+                style={{
+                  background: "rgba(240,179,64,0.10)",
+                  borderColor: "rgba(240,179,64,0.35)",
+                  color: "var(--amber)",
+                }}
+              >
+                <span className="dot" style={{ background: "var(--amber)" }} />
+                In development
               </span>
             </div>
-            <div
+            <p
               style={{
                 marginTop: 14,
                 fontSize: 14,
@@ -755,8 +762,26 @@ export default async function Dashboard() {
                 lineHeight: 1.5,
               }}
             >
-              Local RAG engine active. Last sync 3 min ago.
-            </div>
+              A locked-down Android tablet for homework time — same Echo, no TikTok tab one click away. Prototyping now.
+            </p>
+            <Link
+              href="/contact"
+              style={{
+                marginTop: 14,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 13,
+                color: "var(--violet)",
+                textDecoration: "none",
+              }}
+            >
+              Tell me when it&apos;s ready
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 12h14" />
+                <path d="m12 5 7 7-7 7" />
+              </svg>
+            </Link>
           </div>
         </div>
       </div>
