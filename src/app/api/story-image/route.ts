@@ -84,6 +84,32 @@ Composition: single illustrated scene, no text, no captions, no speech bubbles, 
       if (upErr) {
         console.warn('[story-image] storage upload failed:', upErr.message);
         storagePath = null;
+      } else {
+        // Link the storage path back to the assistant message it illustrated
+        // so the chat can rehydrate scenes on reload. We can't use the
+        // client-side AI SDK message id (it doesn't match chat_messages.id),
+        // so we attach to the most recent assistant turn for this conv.
+        // The chat route persists the assistant row inside `onFinish`, which
+        // is awaited before the stream closes — by the time the client
+        // dispatches the image request the row is normally already there.
+        const { data: target, error: findErr } = await admin
+          .from('chat_messages')
+          .select('id')
+          .eq('parent_id', user.id)
+          .eq('conversation_id', body.conversationId)
+          .eq('role', 'assistant')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (findErr) {
+          console.warn('[story-image] find assistant msg failed:', findErr.message);
+        } else if (target?.id) {
+          const { error: linkErr } = await admin
+            .from('chat_messages')
+            .update({ storybook_image_path: storagePath })
+            .eq('id', target.id);
+          if (linkErr) console.warn('[story-image] link failed:', linkErr.message);
+        }
       }
     }
 

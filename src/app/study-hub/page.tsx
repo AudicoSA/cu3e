@@ -39,6 +39,11 @@ type Mode = "tutor" | "storybook" | "skills";
 
 const CHILD_STORAGE_KEY = "cu3e.selectedChildId";
 const MODE_STORAGE_KEY = "cu3e.mode";
+// Per (child × storybook) so the kid can resume the same story they were
+// writing yesterday. Tutor/skills stay ephemeral on purpose — homework
+// resumption is its own decision and AI Skills lessons are meant to be
+// short, fresh sessions.
+const storybookChatKey = (childId: string) => `cu3e.lastChat:${childId}:storybook`;
 
 const TUTOR_INTRO = {
   title: "Tutor mode",
@@ -298,11 +303,38 @@ export default function StudyHub() {
     if (typeof window !== "undefined") localStorage.setItem(MODE_STORAGE_KEY, m);
   }, []);
 
-  const chatId = useMemo(() => {
-    if (!selectedChildId) return "";
-    return `${selectedChildId}-${mode}-${crypto.randomUUID()}`;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // chatId is the conversation id for the active chat. For storybook we
+  // persist it per child in localStorage so kids resume their in-progress
+  // story; for tutor/skills it stays ephemeral.
+  const [chatId, setChatId] = useState("");
+  useEffect(() => {
+    if (!selectedChildId) {
+      setChatId("");
+      return;
+    }
+    if (mode === "storybook" && typeof window !== "undefined") {
+      const key = storybookChatKey(selectedChildId);
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        setChatId(stored);
+        return;
+      }
+      const fresh = `${selectedChildId}-storybook-${crypto.randomUUID()}`;
+      localStorage.setItem(key, fresh);
+      setChatId(fresh);
+      return;
+    }
+    setChatId(`${selectedChildId}-${mode}-${crypto.randomUUID()}`);
   }, [selectedChildId, mode]);
+
+  const startNewStorybook = useCallback(() => {
+    if (!selectedChildId) return;
+    const fresh = `${selectedChildId}-storybook-${crypto.randomUUID()}`;
+    if (typeof window !== "undefined") {
+      localStorage.setItem(storybookChatKey(selectedChildId), fresh);
+    }
+    setChatId(fresh);
+  }, [selectedChildId]);
 
   const transport = useMemo(
     () =>
@@ -324,7 +356,63 @@ export default function StudyHub() {
   useEffect(() => {
     setMessages([]);
     setSceneImages({});
-  }, [chatId, setMessages]);
+    if (!chatId || mode !== "storybook") return;
+
+    // Resume a stored storybook conversation: restore the message thread
+    // and hydrate scene images via signed URLs for the storage objects
+    // saved by /api/story-image. Tutor/skills don't have scenes; their
+    // chatId is fresh each mount so this fetch would return nothing.
+    let cancelled = false;
+    (async () => {
+      const { data: rows } = await supabase
+        .from("chat_messages")
+        .select("id, role, content, storybook_image_path, created_at")
+        .eq("conversation_id", chatId)
+        .order("created_at", { ascending: true });
+      if (cancelled || !rows || rows.length === 0) return;
+
+      type Row = {
+        id: string;
+        role: "user" | "assistant";
+        content: string;
+        storybook_image_path: string | null;
+      };
+      const typed = rows as Row[];
+
+      const restored: UIMessage[] = typed.map((r) => ({
+        id: r.id,
+        role: r.role,
+        parts: [{ type: "text", text: r.content }],
+      }));
+      setMessages(restored);
+
+      const withImages = typed.filter(
+        (r) => r.role === "assistant" && r.storybook_image_path
+      );
+      if (withImages.length === 0) return;
+
+      const signed = await Promise.all(
+        withImages.map(async (r) => {
+          const { data } = await supabase.storage
+            .from("story-images")
+            .createSignedUrl(r.storybook_image_path!, 60 * 60);
+          return { id: r.id, url: data?.signedUrl ?? null };
+        })
+      );
+      if (cancelled) return;
+      setSceneImages((prev) => {
+        const next = { ...prev };
+        for (const { id, url } of signed) {
+          if (url) next[id] = url;
+        }
+        return next;
+      });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chatId, mode, supabase, setMessages]);
 
   const [sceneImages, setSceneImages] = useState<Record<string, "loading" | "error" | string>>({});
 
@@ -694,6 +782,17 @@ export default function StudyHub() {
                 <line x1="8" y1="23" x2="16" y2="23" />
               </svg>
             </button>
+            {mode === "storybook" && messages.length > 0 && (
+              <button
+                type="button"
+                onClick={startNewStorybook}
+                title="Save this story for later and start a fresh one"
+                className="btn btn-ghost"
+                style={{ fontSize: 12, padding: "8px 12px" }}
+              >
+                + New story
+              </button>
+            )}
             <span className="pill">
               <span
                 className="dot"
