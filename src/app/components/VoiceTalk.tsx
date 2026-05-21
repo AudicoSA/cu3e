@@ -72,6 +72,7 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
       const data = (await r.json()) as {
         signedUrl: string;
         dynamicVariables?: Record<string, string | number | boolean>;
+        ttsVoiceId?: string | null;
       };
 
       // Ask for mic permission before starting — clearer UX than letting the
@@ -82,6 +83,11 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
         signedUrl: data.signedUrl,
         connectionType: "websocket",
         dynamicVariables: data.dynamicVariables ?? {},
+        // Second voice for >=10 — server returns the mature voice_id when the
+        // child's age band is 'big' and ELEVENLABS_VOICE_ID_MATURE is set.
+        ...(data.ttsVoiceId
+          ? { overrides: { tts: { voiceId: data.ttsVoiceId } } }
+          : {}),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

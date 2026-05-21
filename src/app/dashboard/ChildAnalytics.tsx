@@ -72,6 +72,7 @@ const MODE_COLORS: Record<string, string> = {
   storybook: "#4ed8eb",   // cyan
   skills: "#f0b340",      // amber
   voice: "#ec4899",       // pink
+  reading: "#34d399",     // green
 };
 
 export default function ChildAnalytics({
@@ -153,7 +154,7 @@ export default function ChildAnalytics({
               label="Modes explored"
               value={counters.modesExplored}
               accent="var(--cyan)"
-              suffix={` of 4`}
+              suffix={` of 5`}
             />
             <CounterTile
               label="Voice calls"

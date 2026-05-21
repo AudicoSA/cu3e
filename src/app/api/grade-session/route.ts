@@ -2,6 +2,7 @@ import { generateObject } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { z } from 'zod';
 import { createClient } from '@/utils/supabase/server';
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js';
 
 export const maxDuration = 30;
 
@@ -134,5 +135,72 @@ Be honest. If a session was lazy, score low. If it was great, score high. Most s
     return Response.json({ error: insErr.message }, { status: 500 });
   }
 
+  // Breakthrough push: if this session was strong (breakthrough >= 4 OR
+  // composite >= 4), create a parent_notification so the dashboard surfaces
+  // it. Uniqueness on (source_grade_id) stops duplicates if grading is ever
+  // re-run for the same conversation.
+  void maybeCreateBreakthroughNotification({
+    gradeId: inserted!.id as string,
+    childId,
+    parentId: user.id,
+    persistence: grade.persistence,
+    insight: grade.insight,
+    breakthrough: grade.breakthrough,
+    summary: grade.summary,
+  }).catch((err) =>
+    console.warn('[grade-session] breakthrough notify failed:', err instanceof Error ? err.message : String(err))
+  );
+
   return Response.json({ existing: false, grade: inserted });
+}
+
+async function maybeCreateBreakthroughNotification(args: {
+  gradeId: string;
+  childId: string;
+  parentId: string;
+  persistence: number;
+  insight: number;
+  breakthrough: number;
+  summary: string;
+}) {
+  const composite = (args.persistence + args.insight + args.breakthrough) / 3;
+  // Two-track trigger: a strong breakthrough on its own, OR a strong overall
+  // session even without a single big aha. Tuned conservatively so parents
+  // only get notified for sessions actually worth a high-five.
+  const trigger = args.breakthrough >= 4 || composite >= 4.3;
+  if (!trigger) return;
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceKey) return;
+  const admin = createSupabaseAdmin(supabaseUrl, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  const { data: child } = await admin
+    .from('children')
+    .select('first_name')
+    .eq('id', args.childId)
+    .maybeSingle();
+  const name = (child?.first_name as string) ?? 'Your child';
+
+  const title =
+    args.breakthrough >= 4
+      ? `${name} just had a breakthrough`
+      : `Strong session from ${name}`;
+
+  const { error } = await admin
+    .from('parent_notifications')
+    .insert({
+      parent_id: args.parentId,
+      child_id: args.childId,
+      kind: 'breakthrough',
+      title,
+      body: args.summary,
+      source_grade_id: args.gradeId,
+    });
+  // 23505 = unique violation on source_grade_id (already notified). Ignore.
+  if (error && error.code !== '23505') {
+    console.warn('[grade-session] notification insert failed:', error.message);
+  }
 }

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import AddChildForm from "./AddChildForm";
 import WeeklyOverview from "./WeeklyOverview";
 import ChildAnalytics from "./ChildAnalytics";
+import NotificationsBanner, { type ParentNotification } from "./NotificationsBanner";
 import { logout } from "../auth/actions";
 import Link from "next/link";
 import { SKILL_LESSONS, FOUNDATIONS_SKILLS, detectSkillFromMessage, tierForProgress } from "@/lib/skills";
@@ -291,6 +292,19 @@ export default async function Dashboard() {
     (children ?? []).map((c) => [c.id as string, c as { id: string; first_name: string }])
   );
 
+  // Recent undismissed breakthrough notifications (last 14 days). The grader
+  // inserts these when a session scores breakthrough >= 4 or composite >= 4.3.
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: notificationRows } = await supabase
+    .from("parent_notifications")
+    .select("id, kind, title, body, created_at, seen_at")
+    .eq("parent_id", user.id)
+    .is("dismissed_at", null)
+    .gte("created_at", fourteenDaysAgo)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  const notifications: ParentNotification[] = (notificationRows ?? []) as ParentNotification[];
+
   // Latest weekly overview (audio) so the dashboard can show the existing one
   // without forcing a regenerate every visit.
   const { data: latestOverviewRow } = await supabase
@@ -369,6 +383,9 @@ export default async function Dashboard() {
       >
         {/* Left column */}
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+          {/* Breakthroughs — fresh strong sessions, dismissable */}
+          <NotificationsBanner initial={notifications} />
+
           {/* Weekly audio overview */}
           <WeeklyOverview latest={latestOverview} />
 
@@ -513,18 +530,22 @@ export default async function Dashboard() {
                   });
                   const modeLabel =
                     msg.mode === "storybook" ? "Storybook" :
-                    msg.mode === "skills" ? "Skills" : "Tutor";
+                    msg.mode === "skills" ? "Skills" :
+                    msg.mode === "reading" ? "Reading" : "Tutor";
                   const modeColor =
                     msg.mode === "storybook" ? "rgba(78,216,235,0.5)" :
                     msg.mode === "skills" ? "rgba(240,179,64,0.5)" :
+                    msg.mode === "reading" ? "rgba(52,211,153,0.5)" :
                     "rgba(138,107,255,0.5)";
                   const modeBg =
                     msg.mode === "storybook" ? "rgba(78,216,235,0.1)" :
                     msg.mode === "skills" ? "rgba(240,179,64,0.1)" :
+                    msg.mode === "reading" ? "rgba(52,211,153,0.1)" :
                     "rgba(138,107,255,0.1)";
                   const modeText =
                     msg.mode === "storybook" ? "var(--cyan)" :
                     msg.mode === "skills" ? "var(--amber)" :
+                    msg.mode === "reading" ? "#34d399" :
                     "var(--violet)";
                   return (
                     <li

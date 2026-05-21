@@ -1,5 +1,3 @@
-import { generateText } from 'ai';
-import { anthropic } from '@ai-sdk/anthropic';
 import { createClient } from '@/utils/supabase/server';
 
 export const maxDuration = 30;
@@ -45,7 +43,7 @@ export async function POST(req: Request) {
   if (requestedChildId) {
     const { data: childRow } = await supabase
       .from('children')
-      .select('id, first_name, age, grade')
+      .select('id, first_name, age, grade, memory_brief')
       .eq('id', requestedChildId)
       .eq('parent_id', user.id)
       .maybeSingle();
@@ -56,56 +54,13 @@ export async function POST(req: Request) {
       childGrade = (childRow.grade as string) ?? null;
       if (typeof childAge === 'number' && childAge <= 9) ageBand = 'little';
 
-      // Pull the kid's most recent turns (both sides of the conversation,
-      // last 14 days) so Haiku can summarise the actual context — not just
-      // user-side fragments.
-      const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
-      const { data: recentRows } = await supabase
-        .from('chat_messages')
-        .select('role, content, mode, created_at')
-        .eq('child_id', childRow.id)
-        .gte('created_at', fourteenDaysAgo)
-        .order('created_at', { ascending: false })
-        .limit(40);
-
-      if (recentRows && recentRows.length > 0) {
-        // Order oldest → newest so the summary reads chronologically.
-        const ordered = [...recentRows].reverse();
-        const transcript = ordered
-          .map((r) => {
-            const who = r.role === 'user' ? childName : 'Echo';
-            const tag = r.mode && r.mode !== 'tutor' ? ` [${r.mode}]` : '';
-            const snippet = String(r.content).replace(/\s+/g, ' ').slice(0, 200);
-            return `${who}${tag}: ${snippet}`;
-          })
-          .join('\n');
-
-        try {
-          const { text } = await generateText({
-            model: anthropic('claude-haiku-4-5-20251001'),
-            messages: [
-              {
-                role: 'user',
-                content: `Summarise what ${childName} (a kid) has been working on with Echo lately, based on these recent chats. ONE OR TWO short sentences max. Mention specific topics or worksheets if obvious. If they got stuck somewhere, name it. If they had a breakthrough, name it. No preamble, no quotes, no "the child" — refer to ${childName} by name. Just the summary, plain text.\n\nCHATS:\n${transcript}`,
-              },
-            ],
-            maxRetries: 1,
-          });
-          const summary = (text ?? '').trim();
-          if (summary) recentSummary = summary;
-        } catch (e) {
-          console.warn(
-            '[voice-session] recent-topics summary failed:',
-            e instanceof Error ? e.message : String(e)
-          );
-          // Fall back to the raw-bullet form so Echo still has SOME context.
-          const lines = ordered
-            .filter((r) => r.role === 'user')
-            .slice(-6)
-            .map((r) => `- ${String(r.content).replace(/\s+/g, ' ').slice(0, 120)}`);
-          if (lines.length > 0) recentSummary = lines.join('\n');
-        }
-      }
+      // Use the daily-refreshed memory_brief from children.memory_brief as the
+      // recent-topics context for the EL agent prompt. The brief is built by
+      // lib/memory.refreshChildMemory after each chat session and covers the
+      // last 30 days. Replaces the per-session Haiku summarisation that
+      // used to live here (one less call on every voice connect).
+      const brief = (childRow.memory_brief as string | null) ?? null;
+      if (brief && brief.trim()) recentSummary = brief.trim();
     }
   }
 
@@ -146,9 +101,17 @@ export async function POST(req: Request) {
       return Response.json({ error: 'no signed_url in response' }, { status: 500 });
     }
 
+    // Second voice for the 'big' age band (>=10). Kids older than 9 find the
+    // playful agent voice too childish; this lets us override at session-open
+    // without spinning up a second agent. ELEVENLABS_VOICE_ID_MATURE must be
+    // set in env; if unset, fall through to the agent's default voice.
+    const matureVoiceId = process.env.ELEVENLABS_VOICE_ID_MATURE || null;
+    const ttsVoiceId = ageBand === 'big' && matureVoiceId ? matureVoiceId : null;
+
     return Response.json({
       signedUrl: data.signed_url,
       dynamicVariables,
+      ttsVoiceId,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

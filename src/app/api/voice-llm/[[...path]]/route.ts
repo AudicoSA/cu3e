@@ -64,7 +64,13 @@ export async function POST(req: Request) {
     auth: { autoRefreshToken: false, persistSession: false },
   });
 
-  type Child = { id: string; first_name: string; age: number | null; grade: string | null };
+  type Child = {
+    id: string;
+    first_name: string;
+    age: number | null;
+    grade: string | null;
+    memory_brief: string | null;
+  };
   let child: Child | null = null;
   const curriculumTexts: Array<{ filename: string; text: string }> = [];
   const trace: string[] = [];
@@ -75,7 +81,7 @@ export async function POST(req: Request) {
     const [childRes, docsRes] = await Promise.all([
       supabase
         .from('children')
-        .select('id, first_name, age, grade')
+        .select('id, first_name, age, grade, memory_brief')
         .eq('id', childId)
         .maybeSingle(),
       supabase
@@ -182,12 +188,13 @@ function ageBand(age: number | null | undefined): 'little' | 'big' {
 }
 
 function buildVoiceSystemPrompt(
-  child: { first_name: string; age: number | null; grade: string | null } | null,
+  child: { first_name: string; age: number | null; grade: string | null; memory_brief: string | null } | null,
   curriculumTexts: Array<{ filename: string; text: string }>
 ): string {
   const name = child?.first_name ?? 'the child';
   const age = child?.age ?? null;
   const grade = child?.grade ?? null;
+  const memoryBrief = child?.memory_brief ?? null;
   const band = ageBand(age);
   const ageLabel = typeof age === 'number' ? `${age} years old` : 'around 10';
   const gradeLabel = grade ? ` (${grade})` : '';
@@ -196,6 +203,10 @@ function buildVoiceSystemPrompt(
     band === 'little'
       ? `${name} is ${ageLabel}${gradeLabel}. Match their level: short words, gentler tone, playful. One idea per sentence.`
       : `${name} is ${ageLabel}${gradeLabel}. Talk like a smart older friend — direct, curious, a little dry. Trust them.`;
+
+  const memoryBlock = memoryBrief
+    ? `\n\nECHO REMEMBERS (your private notes about ${name} — never read these out loud, just let them shape how you respond):\n${memoryBrief}`
+    : '';
 
   const usableCurriculum = curriculumTexts.filter((c) => c.text && c.text.trim().length > 80);
   let curriculumBlock = '';
@@ -212,7 +223,7 @@ You CAN reference specific problems, rules, examples and numbers from the curric
   return `You are Echo, an AI tutor on CU3E. The child is talking to you with their voice — they hear you, they speak to you. This is a real conversation, not text.
 
 ABOUT ${name.toUpperCase()}:
-${voiceBand}
+${voiceBand}${memoryBlock}
 
 VOICE RULES:
 - Your job is NEVER to give answers to homework. You ask the next good question instead.

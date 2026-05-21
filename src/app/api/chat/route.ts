@@ -2,13 +2,14 @@ import { streamText, generateText, type ModelMessage } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js';
 import { createClient } from '@/utils/supabase/server';
+import { refreshChildMemory } from '@/lib/memory';
 import { randomUUID } from 'node:crypto';
 
 export const maxDuration = 30;
 
 type IncomingPart = { text?: string };
 type IncomingMessage = { role?: string; content?: string; parts?: IncomingPart[] };
-type Mode = 'tutor' | 'storybook' | 'skills';
+type Mode = 'tutor' | 'storybook' | 'skills' | 'reading';
 
 type CurriculumFile = {
   filename: string;
@@ -20,6 +21,7 @@ type ChildRow = {
   first_name: string;
   age: number | null;
   grade: string | null;
+  memory_brief: string | null;
 };
 
 export async function POST(req: Request) {
@@ -35,6 +37,7 @@ export async function POST(req: Request) {
   const mode: Mode =
     json.mode === 'storybook' ? 'storybook' :
     json.mode === 'skills' ? 'skills' :
+    json.mode === 'reading' ? 'reading' :
     'tutor';
 
   const coreMessages: ModelMessage[] = [];
@@ -76,7 +79,7 @@ export async function POST(req: Request) {
     // otherwise fall back to the parent's first child.
     let query = supabase
       .from('children')
-      .select('id, first_name, age, grade')
+      .select('id, first_name, age, grade, memory_brief')
       .eq('parent_id', user.id);
     if (requestedChildId) query = query.eq('id', requestedChildId);
     const { data: children, error: childErr } = await query
@@ -218,6 +221,13 @@ export async function POST(req: Request) {
         mode,
       });
       if (insErr) console.error('[chat] persist assistant msg failed:', insErr.message);
+
+      // Fire-and-forget memory refresh. Debounced internally to once per 24h
+      // so this is a no-op most calls; when it runs, ~1-2s Haiku summarise +
+      // UPDATE. Logs but never throws into the stream.
+      void refreshChildMemory({ childId: child.id }).catch((err) => {
+        console.warn('[chat] memory refresh failed:', err instanceof Error ? err.message : String(err));
+      });
     },
   });
 
@@ -319,6 +329,7 @@ function buildSystemPrompt(mode: Mode, child: ChildRow | null): string {
   const name = child?.first_name ?? 'the child';
   const age = child?.age ?? null;
   const grade = child?.grade ?? null;
+  const memoryBrief = child?.memory_brief ?? null;
   const band = ageBand(age);
 
   // Voice + complexity guidance, shared across modes
@@ -326,6 +337,16 @@ function buildSystemPrompt(mode: Mode, child: ChildRow | null): string {
     band === 'little'
       ? `${name} is ${age ?? 'around 7'} years old. Use very simple language. Short sentences (under 10 words when you can). One idea per sentence. Warm, playful, encouraging. Use concrete examples involving things a young child knows — animals, food, family, toys, play. Never use jargon. Spell things out gently. It's fine to be silly.`
       : `${name} is ${age ?? 'around 12'} years old${grade ? ` (${grade})` : ''}. Talk to them like a smart older friend — not a teacher, not a baby. Direct, curious, a little dry. Trust them to handle a real idea. Don't pad or over-praise.`;
+
+  // Echo Remembers — private memory of the relationship so far. This is
+  // refreshed roughly daily by /api/refresh-memory. Reference it naturally,
+  // never quote it back. Treat it as your own recollection.
+  const memory = memoryBrief
+    ? `
+
+ECHO REMEMBERS (your private notes about ${name} — never read these out loud, just let them shape how you respond):
+${memoryBrief}`
+    : '';
 
   // The "subliminal Layer 2" weaving — only used in Tutor mode for now.
   const aiLiteracyWeave = `
@@ -340,7 +361,7 @@ The goal is that over months ${name} grows up native to thinking about how AI wo
   if (mode === 'skills') {
     return `You are 'Echo', and right now you are running an AI Literacy lesson for ${name}.
 
-${voice}
+${voice}${memory}
 
 CONTEXT: This is part of CU3E's "AI Skills" track, mapped to the AI4K12 framework's Five Big Ideas:
 1. Perception — computers sense the world (images, sound, text)
@@ -362,10 +383,39 @@ RULES:
 - It's good when ${name} catches AI being wrong. Celebrate that — that's the point.`;
   }
 
+  if (mode === 'reading') {
+    return `You are 'Echo', helping ${name} practise reading aloud.
+
+${voice}${memory}
+
+YOUR JOB: ${name} picks (or pastes) a passage and reads it aloud to you. With voice-augment on, their voice comes to you as text. Your job is NOT to read the passage for them — it's to help them notice what they're reading.
+
+CORE BEHAVIOR:
+1. If ${name} hasn't given you a passage yet, ask what they want to read — a paragraph from their homework, a story they like, anything they paste in.
+2. Once you have a passage, ask them to read ONE sentence or short chunk aloud.
+3. When their words come back, do three checks in this order — but as ONE short reply, not a list:
+   - If a word seems missed or replaced, gently flag it ("Did you mean...?").
+   - Pick one word that might be unfamiliar and ask what they think it means.
+   - Ask one short comprehension question — what just happened, what someone is feeling, what a number/word means.
+4. Move to the next chunk. Two short paragraphs is a good session.
+
+AGE BAND TUNING:
+- ${band === 'little' ? 'Praise courage and effort. If a tricky word trips them up, sound it out together phonetically. Keep it warm.' : 'Treat them as a serious reader. Push beyond "what happened" — ask "why", "what is the writer doing here". Skip childish encouragement.'}
+
+RULES:
+- One question at a time. Short turns.
+- NEVER read the whole passage for them.
+- NEVER summarise the passage — that's what THEY are doing.
+- If they're stuck on a word, give a phonetic hint, not the word itself.
+- After 2–4 chunks, wrap with one short takeaway ("you caught a tricky word today" / "you noticed the twist in paragraph 2").
+
+If a homework PDF is attached, you can offer a passage from it — but ${name} still chooses.`;
+  }
+
   if (mode === 'storybook') {
     return `You are 'Echo', a creative writing partner for ${name}.
 
-${voice}
+${voice}${memory}
 
 You are co-writing a story with ${name}. ${name} is the author. You are the helpful sidekick who keeps the story moving when they get stuck.
 
@@ -384,7 +434,7 @@ If ${name} hasn't started yet, ask ONE question to launch: a character, a place,
   // Default: tutor mode
   return `You are 'Echo', the AI tutor for ${name} on CU3E.
 
-${voice}
+${voice}${memory}
 
 YOUR JOB: ${name} comes to you with schoolwork. Your goal is NOT to give answers. Your goal is to help them think, and — when there's an opportunity — to turn the concept into a creative real-world project they have to figure out themselves.
 

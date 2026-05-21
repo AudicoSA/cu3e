@@ -35,7 +35,7 @@ type LibraryPack = {
   source_attribution: string | null;
 };
 
-type Mode = "tutor" | "storybook" | "skills";
+type Mode = "tutor" | "storybook" | "skills" | "reading";
 
 const CHILD_STORAGE_KEY = "cu3e.selectedChildId";
 const MODE_STORAGE_KEY = "cu3e.mode";
@@ -75,10 +75,21 @@ const SKILLS_INTRO = {
   ],
 };
 
+const READING_INTRO = {
+  title: "Reading mode",
+  body: "Read a passage out loud (turn on the mic). Echo listens, helps with hard words, and checks you understood. Paste any text or read from your homework PDF.",
+  prompts: [
+    "I want to read from my book",
+    "Help me read this paragraph",
+    "I need to practise reading aloud",
+  ],
+};
+
 const INTROS: Record<Mode, typeof TUTOR_INTRO> = {
   tutor: TUTOR_INTRO,
   storybook: STORYBOOK_INTRO,
   skills: SKILLS_INTRO,
+  reading: READING_INTRO,
 };
 
 export default function StudyHub() {
@@ -130,11 +141,11 @@ export default function StudyHub() {
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
   useEffect(() => {
-    if (urlMode === "tutor" || urlMode === "storybook" || urlMode === "skills") {
+    if (urlMode === "tutor" || urlMode === "storybook" || urlMode === "skills" || urlMode === "reading") {
       setMode(urlMode);
     } else {
       const storedMode = (typeof window !== "undefined" && localStorage.getItem(MODE_STORAGE_KEY)) as Mode | null;
-      if (storedMode === "tutor" || storedMode === "storybook" || storedMode === "skills") setMode(storedMode);
+      if (storedMode === "tutor" || storedMode === "storybook" || storedMode === "skills" || storedMode === "reading") setMode(storedMode);
     }
     if (urlPrompt) setPendingPrompt(urlPrompt);
     if (urlMode || urlPrompt) {
@@ -652,6 +663,9 @@ export default function StudyHub() {
             {mode === "skills" && (
               <>How AI <span className="serif-italic accent">actually works.</span></>
             )}
+            {mode === "reading" && (
+              <>Read it <span className="serif-italic accent">out loud.</span></>
+            )}
           </h1>
         </div>
 
@@ -744,7 +758,7 @@ export default function StudyHub() {
             </div>
             <div style={{ flex: 1 }}>
               <div className="chat-name">
-                Echo · {mode === "tutor" ? "tutor" : mode === "storybook" ? "story partner" : "AI guide"}
+                Echo · {mode === "tutor" ? "tutor" : mode === "storybook" ? "story partner" : mode === "reading" ? "reading coach" : "AI guide"}
                 {selectedChild ? ` for ${selectedChild.first_name}` : ""}
               </div>
               <div className="chat-sub" style={{ marginTop: 2 }}>
@@ -996,6 +1010,8 @@ export default function StudyHub() {
                     ? "Pitch your idea to Echo…"
                     : mode === "storybook"
                     ? "What happens next?"
+                    : mode === "reading"
+                    ? "Paste a passage, or read aloud…"
                     : "Ask Echo about AI…"
                 }
               />
@@ -1271,6 +1287,7 @@ function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => voi
     { value: "tutor", label: "Tutor" },
     { value: "storybook", label: "Storybook" },
     { value: "skills", label: "Skills" },
+    { value: "reading", label: "Reading" },
   ];
   return (
     <div
