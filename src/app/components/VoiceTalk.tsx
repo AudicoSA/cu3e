@@ -146,6 +146,21 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Flush on disconnect — covers internet drops, EL-side timeouts, anything
+  // that ends the websocket without going through handleClose. Without this,
+  // a kid who loses wifi mid-conversation comes back to a fresh Echo that
+  // has no idea what they were just talking about. flushTranscript itself
+  // is a no-op when turns are empty, so double-flushes from the normal
+  // End-call path are safe.
+  const prevStatusRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = status;
+    if (prev === "connected" && status !== "connected") {
+      void flushTranscript();
+    }
+  }, [status, flushTranscript]);
+
   // Close on Esc
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

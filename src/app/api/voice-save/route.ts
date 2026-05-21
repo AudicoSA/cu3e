@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server';
+import { refreshChildMemory } from '@/lib/memory';
 import { randomUUID } from 'node:crypto';
 
 export const maxDuration = 30;
@@ -69,6 +70,13 @@ export async function POST(req: Request) {
     console.error('[voice-save] insert failed:', insErr.message);
     return Response.json({ error: insErr.message }, { status: 500 });
   }
+
+  // Fire-and-forget memory refresh so the next voice/text session opens with
+  // continuity from this just-ended conversation. Smart-debounced internally
+  // (no Haiku call if nothing new since last refresh + 5-min cooldown).
+  void refreshChildMemory({ childId }).catch((err) =>
+    console.warn('[voice-save] memory refresh failed:', err instanceof Error ? err.message : String(err))
+  );
 
   return Response.json({ inserted: rows.length, conversationId });
 }

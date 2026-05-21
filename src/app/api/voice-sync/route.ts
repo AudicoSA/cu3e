@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js';
+import { refreshChildMemory } from '@/lib/memory';
 
 export const maxDuration = 60;
 
@@ -100,6 +101,7 @@ async function handle(req: Request) {
     errors: [] as string[],
   };
 
+  const affectedChildIds = new Set<string>();
   for (const elConvId of convIds) {
     const dbConvId = elConversationToUuid(elConvId);
 
@@ -162,7 +164,20 @@ async function handle(req: Request) {
     }
     results.persisted_conversations += 1;
     results.persisted_messages += rows.length;
+    affectedChildIds.add(childId);
   }
+
+  // Refresh memory_brief for every child whose voice transcripts we just
+  // pulled in. The cron variant of this route catches up disconnected
+  // conversations that the client-side voice-save flow missed — without
+  // this, the next session would still open with stale context.
+  await Promise.all(
+    Array.from(affectedChildIds).map((cid) =>
+      refreshChildMemory({ childId: cid }).catch((err) =>
+        console.warn('[voice-sync] memory refresh failed:', cid, err instanceof Error ? err.message : String(err))
+      )
+    )
+  );
 
   return Response.json({ ok: true, ...results });
 }
