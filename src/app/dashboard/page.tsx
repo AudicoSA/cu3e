@@ -4,7 +4,8 @@ import AddChildForm from "./AddChildForm";
 import WeeklyOverview from "./WeeklyOverview";
 import ChildAnalytics from "./ChildAnalytics";
 import { logout } from "../auth/actions";
-import { SKILL_LESSONS, detectSkillFromMessage } from "@/lib/skills";
+import Link from "next/link";
+import { SKILL_LESSONS, FOUNDATIONS_SKILLS, detectSkillFromMessage, tierForProgress } from "@/lib/skills";
 
 export default async function Dashboard() {
   const supabase = await createClient();
@@ -191,7 +192,9 @@ export default async function Dashboard() {
     avgQuality: number | null;
   };
 
-  const skillStats: SkillStat[] = SKILL_LESSONS.map((lesson) => {
+  // Dashboard ladder shows the 5 foundations only — the full 50-module
+  // curriculum has its own overview at the top of /skills.
+  const skillStats: SkillStat[] = FOUNDATIONS_SKILLS.map((lesson) => {
     const matchingConvs: string[] = [];
     for (const [convId, sid] of conversationSkill.entries()) {
       if (sid === lesson.id) matchingConvs.push(convId);
@@ -220,6 +223,16 @@ export default async function Dashboard() {
   });
 
   const skillsExploredCount = skillStats.filter((s) => s.sessions > 0).length;
+
+  // Full-curriculum progress across all 50 modules — distinct lesson ids the
+  // family has engaged with. Drives the "Beginner / Intermediate / Advanced /
+  // Expert" ribbon and the macro progress bar.
+  const allExploredIds = new Set<string>();
+  for (const sid of conversationSkill.values()) allExploredIds.add(sid);
+  const curriculumProgress = {
+    completed: allExploredIds.size,
+    total: SKILL_LESSONS.length,
+  };
 
   // -----------------------------------------------------------------------
   // Worksheet progress — pulled from curriculum_progress (Haiku-grader hits)
@@ -358,6 +371,12 @@ export default async function Dashboard() {
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           {/* Weekly audio overview */}
           <WeeklyOverview latest={latestOverview} />
+
+          {/* AI Skills macro progress — across the full 50-module curriculum */}
+          <CurriculumProgressCard
+            completed={curriculumProgress.completed}
+            total={curriculumProgress.total}
+          />
 
           {/* Analytics with charts */}
           <ChildAnalytics
@@ -748,5 +767,132 @@ export default async function Dashboard() {
         }
       `}</style>
     </section>
+  );
+}
+
+function CurriculumProgressCard({
+  completed,
+  total,
+}: {
+  completed: number;
+  total: number;
+}) {
+  const progress = tierForProgress(completed);
+  const pct = (completed / total) * 100;
+  return (
+    <Link
+      href="/skills"
+      style={{
+        textDecoration: "none",
+        color: "inherit",
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius-lg)",
+        padding: 24,
+        display: "block",
+        transition: "border-color 180ms ease",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "baseline",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <span className="eyebrow">AI Skills journey</span>
+          <div
+            style={{
+              marginTop: 8,
+              display: "flex",
+              alignItems: "baseline",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <span
+              style={{
+                fontFamily: "var(--font-serif)",
+                fontSize: 32,
+                letterSpacing: "-0.02em",
+                color: "var(--violet)",
+                lineHeight: 1,
+              }}
+            >
+              {completed}
+              <span style={{ fontSize: 16, color: "var(--ink-muted)", marginLeft: 4 }}>
+                of {total}
+              </span>
+            </span>
+            <span
+              className="pill"
+              style={{
+                background: "rgba(138,107,255,0.12)",
+                borderColor: "rgba(138,107,255,0.35)",
+                fontSize: 11,
+              }}
+            >
+              {progress.label}
+            </span>
+          </div>
+          <p
+            style={{
+              marginTop: 8,
+              fontSize: 13,
+              color: "var(--ink-muted)",
+              maxWidth: 540,
+              lineHeight: 1.5,
+            }}
+          >
+            {progress.blurb}
+          </p>
+        </div>
+        <span
+          style={{
+            fontSize: 13,
+            color: "var(--violet)",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          Open AI Skills
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M5 12h14" />
+            <path d="m12 5 7 7-7 7" />
+          </svg>
+        </span>
+      </div>
+      <div
+        style={{
+          marginTop: 16,
+          height: 6,
+          background: "var(--surface-2)",
+          borderRadius: 999,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            width: `${Math.max(2, pct)}%`,
+            height: "100%",
+            background: "linear-gradient(90deg, var(--violet, #8a6bff), var(--cyan, #4ed8eb))",
+            transition: "width 600ms ease",
+          }}
+        />
+      </div>
+    </Link>
   );
 }
