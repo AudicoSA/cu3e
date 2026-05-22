@@ -5,14 +5,16 @@ import { createClient } from '@/utils/supabase/server';
 
 export const maxDuration = 60;
 
-// Pre-extracts verbatim text from an uploaded curriculum PDF using Claude
-// Sonnet 4.6's vision. Runs ONCE on upload (and on demand for backfill),
-// then voice + text Echo read from `extracted_text` on each turn — no more
-// per-turn PDF processing.
+// Pre-extracts verbatim text from an uploaded curriculum document using
+// Claude Sonnet 4.6's vision. Handles BOTH PDFs and single-image uploads
+// (jpg/png/webp — the latter is what the in-app camera capture produces
+// when a kid snaps a worksheet on the kiosk tablet). Runs ONCE on upload
+// (and on demand for backfill), then voice + text Echo read from
+// `extracted_text` on each turn.
 //
 // Why Claude and not pdf-parse: image-only / scanned PDFs (which is most
 // homework worksheets) yield zero text from pdf-parse. Claude reads them
-// natively.
+// natively. Same model handles raw images directly.
 export async function POST(req: Request) {
   const body = (await req.json()) as { document_id?: string };
   const documentId = body.document_id;
@@ -54,13 +56,30 @@ export async function POST(req: Request) {
   }
   const buffer = Buffer.from(await fileData.arrayBuffer());
 
-  const messages: ModelMessage[] = [
-    {
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: `Extract the contents of this PDF homework worksheet for an AI tutor that will be helping the child. The tutor cannot see the PDF itself — only your extraction — so be exhaustive.
+  // Branch on file type: PDFs go through the SDK's `file` part with the
+  // application/pdf media type; single-image uploads (camera capture, gallery
+  // picks) go through `image` parts. Claude Sonnet 4.6's vision handles both
+  // natively so the prompt below is the same — we just adjust the framing
+  // for "worksheet" vs "single page".
+  const ext = (docRow.storage_path.split('.').pop() ?? '').toLowerCase();
+  const isImage = ext === 'jpg' || ext === 'jpeg' || ext === 'png' || ext === 'webp';
+  const imageMediaType: string =
+    ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+
+  const promptText = isImage
+    ? `Extract the contents of this homework worksheet photo for an AI tutor that will be helping the child. The tutor cannot see the photo itself — only your extraction — so be exhaustive.
+
+Capture:
+1. ALL printed text: titles, instructions, question numbers, math expressions, fractions, blanks, answer choices.
+2. ALL pictures/illustrations: describe WHAT is drawn in each question (fish, balloons, pizza slices, apples, circles, bars, pie charts, etc.) and HOW MANY there are, including which are shaded/coloured vs blank.
+3. The visual structure: which picture belongs to which question number.
+
+Output format:
+- For each question, write: \`Q<number>: <printed text>. Picture: <description>.\` if there's a picture, otherwise just the text.
+- Preserve original question numbering (a, b, c, 1, 2, 3 etc).
+- If the photo is blurry, dark, or partially cropped, do your best — flag any question you can't read with \`Q<n>: [unclear, ask the child to re-take or read aloud].\`
+- Do not summarise. Do not paraphrase. Do not solve. Output ONLY the structured extraction.`
+    : `Extract the contents of this PDF homework worksheet for an AI tutor that will be helping the child. The tutor cannot see the PDF itself — only your extraction — so be exhaustive.
 
 For every page, capture:
 1. ALL printed text: titles, instructions, question numbers, math expressions, fractions, blanks, answer choices.
@@ -71,15 +90,25 @@ Output format:
 - One page per section, separated by "---".
 - For each question, write: \`Q<number>: <printed text>. Picture: <description>.\` if there's a picture, otherwise just the text.
 - Preserve original question numbering (a, b, c, 1, 2, 3 etc).
-- Do not summarise. Do not paraphrase. Do not solve. Output ONLY the structured extraction.`,
-        },
-        {
-          type: 'file',
-          data: buffer,
-          mediaType: 'application/pdf',
-          filename: docRow.filename,
-        },
-      ],
+- Do not summarise. Do not paraphrase. Do not solve. Output ONLY the structured extraction.`;
+
+  const messages: ModelMessage[] = [
+    {
+      role: 'user',
+      content: isImage
+        ? [
+            { type: 'text', text: promptText },
+            { type: 'image', image: buffer, mediaType: imageMediaType },
+          ]
+        : [
+            { type: 'text', text: promptText },
+            {
+              type: 'file',
+              data: buffer,
+              mediaType: 'application/pdf',
+              filename: docRow.filename,
+            },
+          ],
     },
   ];
 

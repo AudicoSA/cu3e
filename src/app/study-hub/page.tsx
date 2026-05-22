@@ -9,6 +9,7 @@ import { createBrowserClient } from "@supabase/ssr";
 import VoiceTalk from "../components/VoiceTalk";
 import TalkToEchoFab from "../components/TalkToEchoFab";
 import Screensaver from "../components/Screensaver";
+import CameraCapture from "../components/CameraCapture";
 import { useVoiceAugment } from "@/hooks/useVoiceAugment";
 import { useWakeWord } from "@/hooks/useWakeWord";
 
@@ -432,6 +433,7 @@ export default function StudyHub() {
 
   const [input, setInput] = useState("");
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isLoading = status === "submitted" || status === "streaming";
 
@@ -602,8 +604,16 @@ export default function StudyHub() {
       alert("Pick a child first.");
       return;
     }
-    if (!file || file.type !== "application/pdf") {
-      alert("Please upload a valid PDF file.");
+    const acceptedTypes: Record<string, string> = {
+      "application/pdf": "pdf",
+      "image/jpeg": "jpg",
+      "image/jpg": "jpg",
+      "image/png": "png",
+      "image/webp": "webp",
+    };
+    const ext = file ? acceptedTypes[file.type] : undefined;
+    if (!file || !ext) {
+      alert("Please upload a PDF or a photo (JPG/PNG/WebP).");
       return;
     }
 
@@ -611,10 +621,10 @@ export default function StudyHub() {
     setUploadStage('uploading');
     let insertedId: string | null = null;
     try {
-      const fileName = `${selectedChildId}-${Date.now()}.pdf`;
+      const fileName = `${selectedChildId}-${Date.now()}.${ext}`;
       const { error: uploadError } = await supabase.storage
         .from("curriculum")
-        .upload(fileName, file);
+        .upload(fileName, file, { contentType: file.type });
       if (uploadError) throw uploadError;
 
       const { data: inserted, error: dbError } = await supabase
@@ -758,8 +768,17 @@ export default function StudyHub() {
         enabled={!!selectedChildId}
         active={screensaverActive}
         onActiveChange={setScreensaverActive}
-        busy={isLoading || voiceOpen}
+        busy={isLoading || voiceOpen || cameraOpen}
         wakeWordArmed={wakeWordEnabled}
+      />
+
+      {/* Tablet camera viewfinder — kid snaps a homework worksheet, the
+          captured JPEG flows through the existing handleFileUpload pipe
+          (same code path as a dropped PDF, same Claude extraction). */}
+      <CameraCapture
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={(file) => void handleFileUpload(file)}
       />
 
       {/* Body */}
@@ -780,6 +799,7 @@ export default function StudyHub() {
             uploadFilename={uploadFilename}
             fileInputRef={fileInputRef}
             onPickFile={() => fileInputRef.current?.click()}
+            onPickPhoto={() => setCameraOpen(true)}
             onFileChange={(f) => f && handleFileUpload(f)}
             library={library}
             activatingId={activatingId}
@@ -1410,6 +1430,7 @@ function Sidebar({
   uploadFilename,
   fileInputRef,
   onPickFile,
+  onPickPhoto,
   onFileChange,
   library,
   activatingId,
@@ -1421,6 +1442,7 @@ function Sidebar({
   uploadFilename: string;
   fileInputRef: React.RefObject<HTMLInputElement | null>;
   onPickFile: () => void;
+  onPickPhoto: () => void;
   onFileChange: (file: File | null) => void;
   library: LibraryPack[];
   activatingId: string | null;
@@ -1460,85 +1482,140 @@ function Sidebar({
       <div>
         <span className="eyebrow">Knowledge base</span>
         <p style={{ marginTop: 10, fontSize: 12.5, color: "var(--ink-muted)", lineHeight: 1.55 }}>
-          Upload this child&apos;s curriculum PDFs. Echo will use them as the
-          raw material for projects.
+          Upload a worksheet — drop a PDF, or take a photo with the tablet camera.
         </p>
 
         <div
           style={{
             marginTop: 16,
-            border: "1px dashed var(--border-strong)",
-            borderRadius: 14,
-            padding: 24,
-            textAlign: "center",
-            cursor: busy ? "not-allowed" : "pointer",
-            opacity: busy ? 0.7 : 1,
-            transition: "border-color 150ms ease, background 150ms ease",
-          }}
-          onClick={() => { if (!busy) onPickFile(); }}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            if (busy) return;
-            const f = e.dataTransfer.files?.[0] ?? null;
-            onFileChange(f);
-          }}
-          onMouseOver={(e) => {
-            if (!busy) {
-              e.currentTarget.style.borderColor = "var(--violet)";
-              e.currentTarget.style.background = "var(--surface-2)";
-            }
-          }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.borderColor = "var(--border-strong)";
-            e.currentTarget.style.background = "transparent";
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 10,
           }}
         >
-          <input
-            type="file"
-            hidden
-            accept=".pdf"
-            ref={fileInputRef}
-            onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
-          />
-          <UploadIcon />
-          <p style={{ marginTop: 12, fontSize: 14, fontWeight: 500, color: stageColor }}>
-            {uploadStage === 'idle' ? 'Drop a PDF, or click to browse' : stageLabel}
-          </p>
-          {busy && uploadFilename && (
-            <p style={{ marginTop: 4, fontSize: 11.5, color: "var(--ink-muted)" }}>
-              {uploadFilename}
+          {/* PDF drop zone — compact version */}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => { if (!busy) onPickFile(); }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (busy) return;
+              const f = e.dataTransfer.files?.[0] ?? null;
+              onFileChange(f);
+            }}
+            style={{
+              border: "1px dashed var(--border-strong)",
+              borderRadius: 12,
+              padding: "14px 10px",
+              background: "transparent",
+              color: "var(--ink)",
+              textAlign: "center",
+              cursor: busy ? "not-allowed" : "pointer",
+              opacity: busy ? 0.6 : 1,
+              transition: "border-color 150ms ease, background 150ms ease",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 6,
+              minHeight: 110,
+              justifyContent: "center",
+            }}
+            onMouseOver={(e) => {
+              if (!busy) {
+                e.currentTarget.style.borderColor = "var(--violet)";
+                e.currentTarget.style.background = "var(--surface-2)";
+              }
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.borderColor = "var(--border-strong)";
+              e.currentTarget.style.background = "transparent";
+            }}
+          >
+            <input
+              type="file"
+              hidden
+              accept=".pdf,image/jpeg,image/png,image/webp"
+              ref={fileInputRef}
+              onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
+            />
+            <UploadIcon />
+            <span style={{ fontSize: 12, fontWeight: 500 }}>Drop a PDF</span>
+            <span style={{ fontSize: 10.5, color: "var(--ink-muted)" }}>or browse</span>
+          </button>
+
+          {/* Take a photo — opens the in-app camera viewfinder */}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => { if (!busy) onPickPhoto(); }}
+            style={{
+              border: "1px solid var(--border-strong)",
+              borderRadius: 12,
+              padding: "14px 10px",
+              background: "var(--surface-2)",
+              color: "var(--ink)",
+              textAlign: "center",
+              cursor: busy ? "not-allowed" : "pointer",
+              opacity: busy ? 0.6 : 1,
+              transition: "border-color 150ms ease, background 150ms ease, transform 150ms ease",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 6,
+              minHeight: 110,
+              justifyContent: "center",
+            }}
+            onMouseOver={(e) => {
+              if (!busy) e.currentTarget.style.borderColor = "var(--violet)";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.borderColor = "var(--border-strong)";
+            }}
+          >
+            <CameraIcon />
+            <span style={{ fontSize: 12, fontWeight: 500 }}>Take a photo</span>
+            <span style={{ fontSize: 10.5, color: "var(--ink-muted)" }}>of your worksheet</span>
+          </button>
+        </div>
+
+        {/* Shared status row — applies to either upload path */}
+        {(busy || uploadStage === 'ready' || uploadStage === 'error') && (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ fontSize: 12.5, fontWeight: 500, color: stageColor, margin: 0 }}>
+              {stageLabel}
             </p>
-          )}
-          {!busy && uploadStage === 'idle' && (
-            <p style={{ marginTop: 6, fontSize: 11.5, color: "var(--ink-muted)" }}>
-              Worksheets, lesson notes, textbook chapters
-            </p>
-          )}
-          {busy && (
-            <div
-              style={{
-                marginTop: 14,
-                height: 3,
-                width: "100%",
-                background: "var(--surface-2)",
-                borderRadius: 2,
-                overflow: "hidden",
-                position: "relative",
-              }}
-            >
+            {busy && uploadFilename && (
+              <p style={{ marginTop: 2, fontSize: 11, color: "var(--ink-muted)" }}>
+                {uploadFilename}
+              </p>
+            )}
+            {busy && (
               <div
                 style={{
-                  position: "absolute",
-                  inset: 0,
-                  background:
-                    "linear-gradient(90deg, transparent, var(--violet, #8b5cf6), transparent)",
-                  animation: "uploadBarSlide 1.2s ease-in-out infinite",
+                  marginTop: 10,
+                  height: 3,
+                  width: "100%",
+                  background: "var(--surface-2)",
+                  borderRadius: 2,
+                  overflow: "hidden",
+                  position: "relative",
                 }}
-              />
-            </div>
-          )}
-        </div>
+              >
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "linear-gradient(90deg, transparent, var(--violet, #8b5cf6), transparent)",
+                    animation: "uploadBarSlide 1.2s ease-in-out infinite",
+                  }}
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
       <style>{`
         @keyframes uploadBarSlide {
@@ -1751,19 +1828,38 @@ function SceneImage({ state }: { state: "loading" | "error" | string | undefined
 function UploadIcon() {
   return (
     <svg
-      width="28"
-      height="28"
+      width="22"
+      height="22"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
       strokeWidth="1.6"
       strokeLinecap="round"
       strokeLinejoin="round"
-      style={{ margin: "0 auto", color: "var(--ink-muted)" }}
+      style={{ color: "var(--ink-muted)" }}
     >
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
       <polyline points="17 8 12 3 7 8" />
       <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ color: "var(--violet)" }}
+    >
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+      <circle cx="12" cy="13" r="4" />
     </svg>
   );
 }
