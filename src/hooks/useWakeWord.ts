@@ -98,11 +98,24 @@ export function useWakeWord({
     recog.interimResults = true;
     recog.lang = "en-US";
 
+    // Word-boundary regex so "echolocate", "echoey", "let's go" don't match.
+    const wakeRe = new RegExp(`\\b${lowered}\\b`, "i");
+
     recog.onresult = (event) => {
       if (Date.now() < cooldownUntilRef.current) return;
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript.toLowerCase();
-        if (transcript.includes(lowered)) {
+        const result = event.results[i];
+        // Ignore interim transcripts entirely — they're noisy, and waiting
+        // for a natural pause before firing massively reduces false wakes
+        // from ambient sound.
+        if (!result.isFinal) continue;
+        const transcript = result[0].transcript.trim();
+        if (!transcript) continue;
+        // Wake words are uttered alone. A long transcript that happens to
+        // contain "echo" is almost certainly conversation, not a wake intent.
+        const wordCount = transcript.split(/\s+/).length;
+        if (wordCount > 4) continue;
+        if (wakeRe.test(transcript)) {
           cooldownUntilRef.current = Date.now() + cooldownMs;
           onWakeRef.current();
           return;

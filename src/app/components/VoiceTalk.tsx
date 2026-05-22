@@ -24,6 +24,14 @@ type Turn = { role: "user" | "assistant"; content: string };
 function Overlay({ onClose, childId }: { onClose: () => void; childId: string | null }) {
   const turnsRef = useRef<Turn[]>([]);
   const conversationIdRef = useRef<string | null>(null);
+  // Last time something happened that means the kid is still engaged — either
+  // a user transcript landed OR Echo was mid-sentence. We use this to drive
+  // the auto-end-on-silence (Echo Sleep) below.
+  const lastActivityRef = useRef<number>(Date.now());
+  // The activity ref above is updated from inside the SDK callback (which
+  // closes over the *initial* value) — so we read isSpeaking from a ref too
+  // to avoid stale closures in the silence-watch interval.
+  const isSpeakingRef = useRef<boolean>(false);
 
   const {
     startSession,
@@ -40,10 +48,16 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
       const m = msg as { type?: string; user_transcription_event?: { user_transcript?: string }; agent_response_event?: { agent_response?: string } };
       if (m.type === "user_transcript") {
         const text = m.user_transcription_event?.user_transcript?.trim();
-        if (text) turnsRef.current.push({ role: "user", content: text });
+        if (text) {
+          turnsRef.current.push({ role: "user", content: text });
+          lastActivityRef.current = Date.now();
+        }
       } else if (m.type === "agent_response") {
         const text = m.agent_response_event?.agent_response?.trim();
-        if (text) turnsRef.current.push({ role: "assistant", content: text });
+        if (text) {
+          turnsRef.current.push({ role: "assistant", content: text });
+          lastActivityRef.current = Date.now();
+        }
       }
     },
     onConversationMetadata: (meta) => {
@@ -52,6 +66,13 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
       if (c) conversationIdRef.current = c;
     },
   });
+
+  // Track isSpeaking on a ref so the silence-watch interval below sees the
+  // current value without re-arming on every render.
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+    if (isSpeaking) lastActivityRef.current = Date.now();
+  }, [isSpeaking]);
 
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
@@ -169,6 +190,30 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [handleClose]);
+
+  // Echo Sleep — auto-end the EL session after a stretch of true silence.
+  // The system prompt asks Echo to stay quiet during silence, but EL keeps
+  // the WebSocket open (and the meter running) until the client closes it.
+  // This is the hard stop. lastActivityRef is bumped by user transcripts,
+  // agent responses, and any time Echo is mid-speech, so we only end when
+  // there's been genuine quiet on both sides for the threshold window.
+  const SILENCE_MS = 45_000; // ~45s of true two-way silence ends the call
+  useEffect(() => {
+    if (status !== "connected") return;
+    // Anchor activity at connect so a slow first reply doesn't trip the timer
+    // before the kid has even spoken.
+    lastActivityRef.current = Date.now();
+    const id = window.setInterval(() => {
+      if (isSpeakingRef.current) {
+        lastActivityRef.current = Date.now();
+        return;
+      }
+      if (Date.now() - lastActivityRef.current > SILENCE_MS) {
+        void handleClose();
+      }
+    }, 5_000);
+    return () => window.clearInterval(id);
+  }, [status, handleClose]);
 
   const connected = status === "connected";
 
@@ -315,7 +360,7 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
             letterSpacing: "0.06em",
           }}
         >
-          Press Esc to end · Max 10 minutes per session
+          Press Esc to end · Auto-sleeps after 45s of silence
         </p>
       </div>
     </div>
