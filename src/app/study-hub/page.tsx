@@ -7,7 +7,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
 import VoiceTalk from "../components/VoiceTalk";
+import TalkToEchoFab from "../components/TalkToEchoFab";
+import Screensaver from "../components/Screensaver";
 import { useVoiceAugment } from "@/hooks/useVoiceAugment";
+import { useWakeWord } from "@/hooks/useWakeWord";
 
 type Child = {
   id: string;
@@ -432,6 +435,44 @@ export default function StudyHub() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isLoading = status === "submitted" || status === "streaming";
 
+  // ---------------------------------------------------------------------
+  // Kiosk-bedside trio (#21 FAB, #22 wake word, #23 screensaver)
+  // Wake-word is opt-in (localStorage). Screensaver is on by default but
+  // auto-disables while voice or chat is busy. The three coordinate so
+  // saying "Echo" pops voice mode whether the screen is awake or saving.
+  // ---------------------------------------------------------------------
+  const [wakeWordEnabled, setWakeWordEnabled] = useState(false);
+  const [screensaverActive, setScreensaverActive] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setWakeWordEnabled(localStorage.getItem("cu3e.wakeWord") === "on");
+  }, []);
+
+  const toggleWakeWord = useCallback(() => {
+    setWakeWordEnabled((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("cu3e.wakeWord", next ? "on" : "off");
+      }
+      return next;
+    });
+  }, []);
+
+  // When the wake word fires, pop voice mode and dismiss the screensaver
+  // if it was up. We also suppress the listener while voice modal is open
+  // so EL's own mic capture isn't fighting Web Speech for the device.
+  const onWakeWord = useCallback(() => {
+    setScreensaverActive(false);
+    setVoiceOpen(true);
+  }, []);
+
+  useWakeWord({
+    enabled: wakeWordEnabled && !voiceOpen,
+    keyword: "echo",
+    onWake: onWakeWord,
+  });
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sceneImages]);
@@ -720,6 +761,24 @@ export default function StudyHub() {
         onPromoted={refreshLibrary}
       />
 
+      {/* Floating "Talk to Echo" — visible regardless of scroll, the
+          existing header button gets pushed out of view mid-session. */}
+      <TalkToEchoFab
+        onPress={() => setVoiceOpen(true)}
+        disabled={!selectedChildId}
+        hidden={voiceOpen || screensaverActive}
+      />
+
+      {/* Bedside-companion screensaver. Idle-triggered, exits on tap or
+          when the wake word fires (handled in onWakeWord above). */}
+      <Screensaver
+        enabled={!!selectedChildId}
+        active={screensaverActive}
+        onActiveChange={setScreensaverActive}
+        busy={isLoading || voiceOpen}
+        wakeWordArmed={wakeWordEnabled}
+      />
+
       {/* Body */}
       <div
         className="hub-body"
@@ -795,6 +854,36 @@ export default function StudyHub() {
                 <line x1="12" y1="19" x2="12" y2="23" />
                 <line x1="8" y1="23" x2="16" y2="23" />
               </svg>
+            </button>
+            <button
+              type="button"
+              onClick={toggleWakeWord}
+              title={
+                wakeWordEnabled
+                  ? `Wake word ON — say "Echo" to start a voice call. Tap to disable.`
+                  : `Wake word OFF — tap to enable hands-free start (say "Echo" anywhere).`
+              }
+              aria-label={wakeWordEnabled ? "Disable wake word" : "Enable wake word"}
+              aria-pressed={wakeWordEnabled}
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 999,
+                border: `1px solid ${wakeWordEnabled ? "var(--cyan)" : "var(--border-strong)"}`,
+                background: wakeWordEnabled ? "var(--cyan)" : "transparent",
+                color: wakeWordEnabled ? "#0a0b10" : "var(--ink-muted)",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontFamily: "var(--font-mono)",
+                fontWeight: 700,
+                fontSize: 14,
+                letterSpacing: "0.04em",
+                transition: "background 150ms ease, color 150ms ease, border-color 150ms ease",
+              }}
+            >
+              E
             </button>
             {mode === "storybook" && messages.length > 0 && (
               <button
