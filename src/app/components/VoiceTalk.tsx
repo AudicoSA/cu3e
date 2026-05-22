@@ -33,6 +33,18 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
   // to avoid stale closures in the silence-watch interval.
   const isSpeakingRef = useRef<boolean>(false);
 
+  // Pending close from a detected sleep ack. We schedule handleClose ~3s
+  // out so Echo's spoken acknowledgement actually finishes playing before
+  // the WebSocket drops. Stored as a ref so any subsequent agent re-engage
+  // (Echo trying to chat after saying she'll be quiet) doesn't cancel the
+  // scheduled close.
+  const sleepCloseTimerRef = useRef<number | null>(null);
+  // Armed when the KID asks Echo to sleep/be quiet/say goodnight. Once
+  // armed, Echo's very next reply triggers the close (regardless of whether
+  // it sounds like an ack) so we don't depend on the model phrasing things
+  // a particular way.
+  const sleepArmedRef = useRef<boolean>(false);
+
   const {
     startSession,
     endSession,
@@ -51,12 +63,36 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
         if (text) {
           turnsRef.current.push({ role: "user", content: text });
           lastActivityRef.current = Date.now();
+          // Did the kid ask Echo to sleep/stop? Arm the close — Echo's
+          // next reply (whether it's a clean "ok goodnight" or some other
+          // phrasing) will trigger the scheduled close below.
+          const sleepIntent =
+            /\b(go (to )?sleep|be quiet|stop talking|shush|goodnight|good night|bye echo|i'?m (tired|done|going to sleep)|that'?s enough|we'?re done)\b/i;
+          if (sleepIntent.test(text)) sleepArmedRef.current = true;
         }
       } else if (m.type === "agent_response") {
         const text = m.agent_response_event?.agent_response?.trim();
         if (text) {
           turnsRef.current.push({ role: "assistant", content: text });
           lastActivityRef.current = Date.now();
+          // Schedule a clean close ~3s out (lets the spoken reply finish
+          // before the WebSocket drops) when EITHER:
+          //   (a) The kid armed sleep on the previous turn — any reply
+          //       from Echo now closes the call. Robust against the model
+          //       not phrasing the ack the way our regex expects.
+          //   (b) Echo independently produced a sleep-ack phrase (e.g. she
+          //       picked up a "go quiet" cue from earlier context).
+          // Once scheduled we never re-arm — any subsequent re-engage turn
+          // from EL is exactly the loop we're escaping.
+          if (sleepCloseTimerRef.current === null) {
+            const sleepAck =
+              /\bi'?ll be (quiet|here when|on standby)\b|\bi'?ll (wait|stop talking|let you (rest|sleep))\b|\blet me know (if|when) you need me\b|\bgoing quiet\b|\bgoodnight\b/i;
+            if (sleepArmedRef.current || sleepAck.test(text)) {
+              sleepCloseTimerRef.current = window.setTimeout(() => {
+                void handleCloseRef.current?.();
+              }, 3000);
+            }
+          }
         }
       }
     },
@@ -156,10 +192,22 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
   }, [childId]);
 
   const handleClose = useCallback(async () => {
+    if (sleepCloseTimerRef.current !== null) {
+      window.clearTimeout(sleepCloseTimerRef.current);
+      sleepCloseTimerRef.current = null;
+    }
     endSession();
     await flushTranscript();
     onClose();
   }, [endSession, flushTranscript, onClose]);
+
+  // The SDK's onMessage callback is captured at mount and would close over
+  // a stale handleClose. Stash the current ref so the sleep-ack timer can
+  // call the latest version.
+  const handleCloseRef = useRef(handleClose);
+  useEffect(() => {
+    handleCloseRef.current = handleClose;
+  }, [handleClose]);
 
   // Auto-start on mount
   useEffect(() => {
