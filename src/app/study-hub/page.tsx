@@ -96,6 +96,63 @@ const INTROS: Record<Mode, typeof TUTOR_INTRO> = {
   reading: READING_INTRO,
 };
 
+// Per-mode metadata that drives the refreshed header, mode chooser, and
+// scattered accents throughout the page. Each mode owns a colour so the
+// page feels distinct depending on what the kid is doing — purple study,
+// cyan storytelling, amber AI-skills, green reading.
+const MODE_META: Record<Mode, { label: string; tagline: string; accent: string; icon: React.ReactNode }> = {
+  tutor: {
+    label: "Tutor",
+    tagline:
+      "Drop a worksheet or just type what you're stuck on. Echo helps you think — not hand over the answer.",
+    accent: "#8a6bff",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+        <path d="M6 12v5c3 3 9 3 12 0v-5" />
+      </svg>
+    ),
+  },
+  storybook: {
+    label: "Storybook",
+    tagline:
+      "You're the author. Echo's your sidekick. Bring a character, a place, or a wild problem — we start there.",
+    accent: "#4ed8eb",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+      </svg>
+    ),
+  },
+  skills: {
+    label: "AI Skills",
+    tagline:
+      "Five-minute experiments that show how AI actually works — perception, learning, what to trust, what not to.",
+    accent: "#f0b340",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+        <circle cx="12" cy="12" r="4" />
+      </svg>
+    ),
+  },
+  reading: {
+    label: "Reading",
+    tagline:
+      "Read a passage aloud. Echo listens, helps with tricky words, and checks you actually got what just happened.",
+    accent: "#34d399",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+        <line x1="12" y1="19" x2="12" y2="23" />
+        <line x1="8" y1="23" x2="16" y2="23" />
+      </svg>
+    ),
+  },
+};
+
 export default function StudyHub() {
   const supabase = useMemo(
     () =>
@@ -690,43 +747,30 @@ export default function StudyHub() {
 
   return (
     <section className="container" style={{ padding: "56px 0 96px", minHeight: "88vh", display: "flex", flexDirection: "column" }}>
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-end",
-          gap: 24,
-          flexWrap: "wrap",
-          paddingBottom: 32,
-          borderBottom: "1px solid var(--border)",
-        }}
-      >
-        <div>
-          <span className="eyebrow">Study Hub</span>
-          <h1 className="h-section" style={{ marginTop: 12, fontSize: "clamp(32px, 4vw, 48px)" }}>
-            {mode === "tutor" && (
-              <>Build, <span className="serif-italic accent">don&apos;t copy.</span></>
+      {/* Header — refreshed hero zone */}
+      <header className="study-hub-header">
+        {/* Top meta row: eyebrow + (optional) child switcher */}
+        <div className="study-hub-meta">
+          <div className="study-hub-meta-left">
+            <span className="eyebrow">Study Hub</span>
+            {selectedChild && (
+              <span className="study-hub-context">
+                <span
+                  className="study-hub-context-dot"
+                  style={{ background: MODE_META[mode].accent }}
+                />
+                for <strong>{selectedChild.first_name}</strong>
+                {typeof selectedChild.age === "number" && (
+                  <span style={{ color: "var(--ink-faint)" }}> · {selectedChild.age}</span>
+                )}
+              </span>
             )}
-            {mode === "storybook" && (
-              <>Make something, <span className="serif-italic accent">together.</span></>
-            )}
-            {mode === "skills" && (
-              <>How AI <span className="serif-italic accent">actually works.</span></>
-            )}
-            {mode === "reading" && (
-              <>Read it <span className="serif-italic accent">out loud.</span></>
-            )}
-          </h1>
-        </div>
-
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          </div>
           {children.length > 1 && selectedChildId && (
             <select
               value={selectedChildId}
               onChange={(e) => onChooseChild(e.target.value)}
-              className="field"
-              style={{ maxWidth: 200, padding: "10px 12px", fontSize: 14, background: "var(--surface)" }}
+              className="field study-hub-child-select"
               aria-label="Choose child"
             >
               {children.map((c) => (
@@ -737,10 +781,105 @@ export default function StudyHub() {
               ))}
             </select>
           )}
-
-          <ModeToggle mode={mode} onChange={onChooseMode} />
         </div>
-      </div>
+
+        {/* Mode-aware title */}
+        <h1 className="study-hub-title">
+          {mode === "tutor" && (
+            <>Build, <span className="serif-italic accent">don&apos;t copy.</span></>
+          )}
+          {mode === "storybook" && (
+            <>Make something, <span className="serif-italic accent">together.</span></>
+          )}
+          {mode === "skills" && (
+            <>How AI <span className="serif-italic accent">actually works.</span></>
+          )}
+          {mode === "reading" && (
+            <>Read it <span className="serif-italic accent">out loud.</span></>
+          )}
+        </h1>
+
+        {/* Mode-aware subtitle */}
+        <p className="study-hub-subtitle">{MODE_META[mode].tagline}</p>
+
+        {/* Mode chooser cards */}
+        <ModeChooser mode={mode} onChange={onChooseMode} />
+
+        <style>{`
+          .study-hub-header {
+            position: relative;
+            padding: 12px 0 40px;
+            border-bottom: 1px solid var(--border);
+          }
+          .study-hub-header::after {
+            content: "";
+            position: absolute;
+            inset: auto 0 0 0;
+            height: 1px;
+            background: linear-gradient(
+              90deg,
+              transparent 0%,
+              ${MODE_META[mode].accent}66 50%,
+              transparent 100%
+            );
+            opacity: 0.7;
+          }
+          .study-hub-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+          }
+          .study-hub-meta-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+          }
+          .study-hub-context {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: var(--ink-muted);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+          }
+          .study-hub-context-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 999px;
+            box-shadow: 0 0 0 4px rgba(255,255,255,0.04);
+            transition: background 200ms ease, box-shadow 200ms ease;
+          }
+          .study-hub-child-select {
+            max-width: 220px;
+            padding: 8px 12px;
+            font-size: 13px;
+            background: var(--surface);
+            border: 1px solid var(--border-strong);
+            border-radius: 10px;
+          }
+          .study-hub-title {
+            font-family: var(--font-serif);
+            font-size: clamp(40px, 5.6vw, 68px);
+            line-height: 1;
+            letter-spacing: -0.03em;
+            margin: 0;
+            color: var(--ink);
+          }
+          .study-hub-subtitle {
+            margin-top: 14px;
+            font-size: 16px;
+            line-height: 1.55;
+            color: var(--ink-soft);
+            max-width: 620px;
+          }
+        `}</style>
+      </header>
 
       <VoiceTalk
         open={voiceOpen}
@@ -981,46 +1120,122 @@ export default function StudyHub() {
                 No child selected. Add one in the dashboard first.
               </div>
             ) : messages.length === 0 ? (
-              <div style={{ margin: "auto", textAlign: "center", maxWidth: 440 }}>
-                <p style={{ fontFamily: "var(--font-serif)", fontSize: 26, color: "var(--ink-muted)", letterSpacing: "-0.01em" }}>
+              <div className="chat-empty">
+                <div
+                  className="chat-empty-avatar"
+                  style={{
+                    boxShadow: `0 12px 40px ${MODE_META[mode].accent}33`,
+                    border: `1px solid ${MODE_META[mode].accent}44`,
+                  }}
+                >
+                  <Image src="/echo.png" alt="" fill sizes="72px" style={{ objectFit: "cover" }} aria-hidden />
+                  <span
+                    className="chat-empty-avatar-glow"
+                    style={{ background: `radial-gradient(circle, ${MODE_META[mode].accent}55 0%, transparent 70%)` }}
+                  />
+                </div>
+                <h2 className="chat-empty-title">
                   {intro.title}
-                </p>
-                <p style={{ marginTop: 8, fontSize: 14, color: "var(--ink-muted)", lineHeight: 1.55 }}>
+                </h2>
+                <p className="chat-empty-body">
                   {intro.body}
                 </p>
-                <div style={{ marginTop: 20, display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 8 }}>
+                <div className="chat-empty-prompts">
                   {intro.prompts.map((p) => (
                     <button
                       key={p}
                       onClick={() => send(p)}
                       disabled={isLoading}
+                      className="chat-empty-prompt"
                       style={{
-                        borderRadius: 999,
-                        border: "1px solid var(--border-strong)",
-                        background: "var(--surface)",
-                        padding: "6px 14px",
-                        fontSize: 12.5,
-                        color: "var(--ink-muted)",
-                        cursor: isLoading ? "not-allowed" : "pointer",
                         opacity: isLoading ? 0.5 : 1,
-                        fontFamily: "var(--font-sans)",
-                        transition: "color 150ms ease, border-color 150ms ease, background 150ms ease",
-                      }}
-                      onMouseOver={(e) => {
-                        if (!isLoading) {
-                          e.currentTarget.style.color = "var(--ink)";
-                          e.currentTarget.style.background = "var(--surface-2)";
-                        }
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.color = "var(--ink-muted)";
-                        e.currentTarget.style.background = "var(--surface)";
+                        cursor: isLoading ? "not-allowed" : "pointer",
                       }}
                     >
+                      <span className="chat-empty-prompt-arrow" style={{ color: MODE_META[mode].accent }}>›</span>
                       {p}
                     </button>
                   ))}
                 </div>
+                <style>{`
+                  .chat-empty {
+                    margin: auto;
+                    text-align: center;
+                    max-width: 520px;
+                    padding: 24px;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 8px;
+                  }
+                  .chat-empty-avatar {
+                    position: relative;
+                    width: 72px;
+                    height: 72px;
+                    border-radius: 50%;
+                    overflow: hidden;
+                    margin-bottom: 12px;
+                    transition: box-shadow 300ms ease, border-color 300ms ease;
+                  }
+                  .chat-empty-avatar-glow {
+                    position: absolute;
+                    inset: -20px;
+                    border-radius: 50%;
+                    pointer-events: none;
+                    opacity: 0.7;
+                  }
+                  .chat-empty-title {
+                    font-family: var(--font-serif);
+                    font-size: 32px;
+                    line-height: 1.1;
+                    letter-spacing: -0.02em;
+                    color: var(--ink);
+                    margin: 0;
+                  }
+                  .chat-empty-body {
+                    margin: 0;
+                    font-size: 15px;
+                    line-height: 1.55;
+                    color: var(--ink-soft);
+                    max-width: 440px;
+                  }
+                  .chat-empty-prompts {
+                    margin-top: 18px;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: stretch;
+                    gap: 8px;
+                    width: 100%;
+                    max-width: 380px;
+                  }
+                  .chat-empty-prompt {
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 12px 16px;
+                    border-radius: 12px;
+                    border: 1px solid var(--border);
+                    background: var(--surface);
+                    color: var(--ink-soft);
+                    font-family: var(--font-sans);
+                    font-size: 14px;
+                    line-height: 1.4;
+                    text-align: left;
+                    transition: border-color 180ms ease, background 180ms ease, color 180ms ease, transform 120ms ease;
+                  }
+                  .chat-empty-prompt:not(:disabled):hover {
+                    border-color: var(--border-bright);
+                    background: var(--surface-2);
+                    color: var(--ink);
+                    transform: translateX(2px);
+                  }
+                  .chat-empty-prompt-arrow {
+                    font-family: var(--font-serif);
+                    font-size: 22px;
+                    line-height: 1;
+                    flex-shrink: 0;
+                  }
+                `}</style>
               </div>
             ) : (
               messages.map((m) =>
@@ -1374,52 +1589,109 @@ function ShareModal({
   );
 }
 
-function ModeToggle({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
-  const opts: { value: Mode; label: string }[] = [
-    { value: "tutor", label: "Tutor" },
-    { value: "storybook", label: "Storybook" },
-    { value: "skills", label: "Skills" },
-    { value: "reading", label: "Reading" },
-  ];
+function ModeChooser({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
+  const modes: Mode[] = ["tutor", "storybook", "skills", "reading"];
   return (
-    <div
-      style={{
-        display: "inline-flex",
-        border: "1px solid var(--border-strong)",
-        background: "var(--surface)",
-        padding: 3,
-        borderRadius: 10,
-      }}
-    >
-      {opts.map((o) => {
-        const active = o.value === mode;
+    <div className="mode-chooser">
+      {modes.map((m) => {
+        const meta = MODE_META[m];
+        const active = m === mode;
         return (
           <button
-            key={o.value}
+            key={m}
             type="button"
-            onClick={() => onChange(o.value)}
+            onClick={() => onChange(m)}
+            aria-pressed={active}
+            className="mode-chooser-card"
             style={{
-              padding: "8px 16px",
-              fontSize: 13.5,
-              fontWeight: 500,
-              borderRadius: 7,
-              border: "none",
-              transition: "background 150ms ease, color 150ms ease",
-              background: active ? "var(--violet)" : "transparent",
-              color: active ? "#0a0b10" : "var(--ink-muted)",
-              cursor: "pointer",
-            }}
-            onMouseOver={(e) => {
-              if (!active) e.currentTarget.style.color = "var(--ink)";
-            }}
-            onMouseOut={(e) => {
-              if (!active) e.currentTarget.style.color = "var(--ink-muted)";
+              borderColor: active ? meta.accent : "var(--border-strong)",
+              background: active
+                ? `linear-gradient(135deg, ${meta.accent}22 0%, ${meta.accent}08 100%)`
+                : "var(--surface)",
+              boxShadow: active ? `0 6px 24px ${meta.accent}33` : "none",
             }}
           >
-            {o.label}
+            <span
+              className="mode-chooser-icon"
+              style={{
+                color: active ? meta.accent : "var(--ink-muted)",
+                background: active ? `${meta.accent}1a` : "var(--surface-2)",
+                borderColor: active ? `${meta.accent}66` : "var(--border)",
+              }}
+            >
+              {meta.icon}
+            </span>
+            <span className="mode-chooser-text">
+              <span
+                className="mode-chooser-label"
+                style={{ color: active ? "var(--ink)" : "var(--ink-soft)" }}
+              >
+                {meta.label}
+              </span>
+              <span className="mode-chooser-sub" style={{ color: active ? meta.accent : "var(--ink-muted)" }}>
+                {m === "tutor" ? "Real homework" : m === "storybook" ? "Make a story" : m === "skills" ? "How AI works" : "Out loud"}
+              </span>
+            </span>
           </button>
         );
       })}
+      <style>{`
+        .mode-chooser {
+          margin-top: 28px;
+          display: grid;
+          grid-template-columns: repeat(4, minmax(0, 1fr));
+          gap: 12px;
+        }
+        .mode-chooser-card {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 14px 16px;
+          border: 1px solid var(--border-strong);
+          border-radius: var(--radius);
+          cursor: pointer;
+          text-align: left;
+          font: inherit;
+          color: inherit;
+          transition: border-color 200ms ease, background 200ms ease, box-shadow 200ms ease, transform 120ms ease;
+        }
+        .mode-chooser-card:hover {
+          transform: translateY(-1px);
+        }
+        .mode-chooser-icon {
+          width: 38px;
+          height: 38px;
+          border-radius: 10px;
+          border: 1px solid var(--border);
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          transition: color 200ms ease, background 200ms ease, border-color 200ms ease;
+        }
+        .mode-chooser-text {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+          min-width: 0;
+        }
+        .mode-chooser-label {
+          font-size: 14px;
+          font-weight: 600;
+          letter-spacing: -0.005em;
+          transition: color 200ms ease;
+        }
+        .mode-chooser-sub {
+          font-family: var(--font-mono);
+          font-size: 10.5px;
+          letter-spacing: 0.10em;
+          text-transform: uppercase;
+          transition: color 200ms ease;
+        }
+        @media (max-width: 840px) {
+          .mode-chooser { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+      `}</style>
     </div>
   );
 }
