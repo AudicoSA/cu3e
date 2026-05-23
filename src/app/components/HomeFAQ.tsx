@@ -28,8 +28,12 @@ const FAQS = [
     a: "We're in early access. CU3E is being tested with a small group of families ahead of broader public launch. Sign up now and you're early — expect occasional rough edges, direct contact with the team, and real input on what gets built next.",
   },
   {
-    q: "What about the Edu-Box / Raspberry Pi tier?",
-    a: "Coming. The current vision: a small home device where your data lives on your network. The 'fully offline AI' part is harder than it sounds — current small models that run on a Pi are nowhere near Echo's quality. So the realistic first version is a privacy-tier device where data stays at home and the AI is called from the cloud only when needed. Updates as we build it.",
+    q: "Does Echo speak any languages other than English?",
+    a: "English today, with Afrikaans next — we've heard from Afrikaans-first families that a real Afrikaans-native Echo would be a big deal, so that's the priority. Zulu and Xhosa are on the roadmap after Afrikaans. The plan is for Echo to switch fluently between your child's home language and the English their schoolwork is in — best of both. Email us if you'd want to be part of the language testing early.",
+  },
+  {
+    q: "Is there a CU3E tablet?",
+    a: "Coming. An optional Android tablet add-on, pre-configured and locked into kiosk mode — no browser tabs to escape to, wake-word \"Echo\" for hands-free start, bedside screensaver. The same CU3E experience, just on a device that's purpose-built for it (great for younger kids and as a bedside companion). Sold separately from the subscription. Register interest on the pricing page if you'd like a heads-up when it ships.",
   },
 ];
 

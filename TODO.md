@@ -32,6 +32,8 @@ Mostly shipped, two open items:
 - **Owl idle animation** — subtle blinking / head-turn / "thinking" states for Echo on the chat avatar. Lottie or CSS. The screensaver already has the gentle breathing version; this is the in-chat one.
 - **`/parents` deep-dive page** — dedicated marketing surface for the rigorous-buyer parent. The Sunday-briefing section on the homepage is the emotional hook (Ava reads a 90s sample); `/parents` is where convinced parents click through to see the *substance*: dashboard tour, charts, breakthrough notifications, per-skill progress ladder, weekly trend lines. The current "Plus a parent dashboard with charts…" link on the homepage points at `/pricing` as an interim — should point at `/parents` once it exists. Keeps the homepage breathing room while giving serious buyers a real conversion close.
 
+- **Multilingual support — Afrikaans first, then Zulu/Xhosa.** Potential game-changer for SA market (where Maski, Aida, Luma compete free on WhatsApp in English). Strategic call: Afrikaans first because (a) Ashton-tier families have Afrikaans home-speakers and it deepens the existing premium segment without diluting positioning, (b) AI model quality in Afrikaans is near-English so it's a clean shipping test before tackling Bantu languages, (c) genuinely underserved by current SA AI tutors. Implementation: add `children.preferred_language` column → inject into system prompts in `/api/chat` and `/api/voice-llm` ("Speak to ${name} in ${language} unless they switch to English"). EL agent multilingual config for voice. UI i18n via next-intl. MVP ~1 day, full polish ~5 days. Already flagged on homepage pricing tier and FAQ as "English now · Afrikaans & Zulu next".
+
 ---
 
 ## Tech debt / paper cuts

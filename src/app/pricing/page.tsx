@@ -99,25 +99,26 @@ export default function Pricing() {
               <li><Check /> Voice conversations (fair-use cap)</li>
               <li><Check /> Weekly parent audio overview</li>
               <li><Check /> Curriculum match (CAPS / CC / GCSE / IB)</li>
+              <li><Check /> Multilingual: English now · Afrikaans &amp; Zulu next</li>
               <li><Check /> Priority human support</li>
             </ul>
             <a href="/register" className="btn btn-violet">Start free trial <Arrow /></a>
           </div>
 
-          {/* Edu-Box */}
+          {/* CU3E Tablet — add-on */}
           <div className="plan">
-            <h3>Edu-Box</h3>
+            <h3>CU3E Tablet</h3>
             <div className="plan-price">
               <span className="amount" style={{ fontSize: 32 }}>Coming soon</span>
             </div>
             <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-              A privacy-tier home device: your child&apos;s data lives on your network. Cloud AI is called only when actively asked.
+              Optional hardware add-on. A locked-down Android tablet pre-configured for CU3E — bedside companion, hands-free voice, no browser tabs to escape to.
             </p>
             <ul>
-              <li><Check /> Pre-configured Raspberry Pi 5</li>
-              <li><Check /> Per-family encrypted local storage</li>
-              <li><Check /> Offline JupyterLab for early coding</li>
-              <li><Check /> Cloud AI on-demand · transparent calls</li>
+              <li><Check /> Pre-flashed and kiosk-locked — no setup</li>
+              <li><Check /> Wake-word &ldquo;Echo&rdquo; for hands-free start</li>
+              <li><Check /> Bedside screensaver mode</li>
+              <li><Check /> Replacement / repair on warranty</li>
             </ul>
             <a href="/contact" className="btn btn-ghost">Register interest <Arrow /></a>
           </div>
