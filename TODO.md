@@ -30,6 +30,7 @@ Mostly shipped, two open items:
 - **Multi-region curriculum library** — pre-loaded CAPS / Common Core / GCSE / IB / Australian packs so parents don't have to find their own PDFs to start. Content sourcing is the bulk of the work; the activation flow already exists.
 - **Higgsfield Seedance for "story climax" video** — a standout moment per storybook generates a short animated video instead of a static image. Needs `HIGGSFIELD_API_KEY` + custom fetch integration.
 - **Owl idle animation** — subtle blinking / head-turn / "thinking" states for Echo on the chat avatar. Lottie or CSS. The screensaver already has the gentle breathing version; this is the in-chat one.
+- **`/parents` deep-dive page** — dedicated marketing surface for the rigorous-buyer parent. The Sunday-briefing section on the homepage is the emotional hook (Ava reads a 90s sample); `/parents` is where convinced parents click through to see the *substance*: dashboard tour, charts, breakthrough notifications, per-skill progress ladder, weekly trend lines. The current "Plus a parent dashboard with charts…" link on the homepage points at `/pricing` as an interim — should point at `/parents` once it exists. Keeps the homepage breathing room while giving serious buyers a real conversion close.
 
 ---
 

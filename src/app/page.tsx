@@ -215,6 +215,13 @@ export default function Home() {
               cracked, what to keep an eye on next.
             </p>
             <WeeklyBriefingPlayer />
+            <a href="/pricing" className="sunday-briefing-deeper">
+              Plus a parent dashboard with charts, breakthrough alerts and per-skill progress
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M5 12h14" />
+                <path d="m12 5 7 7-7 7" />
+              </svg>
+            </a>
           </div>
           <div className="sunday-briefing-visual">
             <Image
@@ -252,6 +259,23 @@ export default function Home() {
             overflow: hidden;
             border: 1px solid var(--border);
             box-shadow: var(--shadow-soft);
+          }
+          .sunday-briefing-deeper {
+            margin-top: 18px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-family: var(--font-mono);
+            font-size: 11.5px;
+            letter-spacing: 0.10em;
+            text-transform: uppercase;
+            color: var(--ink-muted);
+            text-decoration: none;
+            transition: color 180ms ease, gap 180ms ease;
+          }
+          .sunday-briefing-deeper:hover {
+            color: var(--cyan);
+            gap: 12px;
           }
           @media (max-width: 920px) {
             .sunday-briefing { padding: 64px 0; }
