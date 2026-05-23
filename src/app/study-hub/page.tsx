@@ -721,8 +721,10 @@ export default function StudyHub() {
           throw new Error(errBody.error || `extract failed (${res.status})`);
         }
         setUploadStage('ready');
-        // Linger on "ready" for a moment so the user actually sees it.
-        setTimeout(() => setUploadStage('idle'), 2500);
+        // Linger long enough for the kid to read the status AND tap the
+        // "Ask Echo about it" CTA below. Tapping that CTA also resets the
+        // stage to 'idle' from study-hub so this is mostly a fallback timer.
+        setTimeout(() => setUploadStage('idle'), 30000);
       } else {
         setUploadStage('idle');
       }
@@ -940,6 +942,14 @@ export default function StudyHub() {
             onPickFile={() => fileInputRef.current?.click()}
             onPickPhoto={() => setCameraOpen(true)}
             onFileChange={(f) => f && handleFileUpload(f)}
+            onAskAboutLatest={() => {
+              if (!uploadFilename) return;
+              // Switch to tutor mode if the kid is in storybook/skills/reading
+              // when they tap this — the upload only makes sense in tutor.
+              if (mode !== 'tutor') setMode('tutor');
+              send(`Let's start with the worksheet I just uploaded — ${uploadFilename}. Where should I begin?`);
+              setUploadStage('idle');
+            }}
             library={library}
             activatingId={activatingId}
             onActivate={activateLibraryPack}
@@ -1704,6 +1714,7 @@ function Sidebar({
   onPickFile,
   onPickPhoto,
   onFileChange,
+  onAskAboutLatest,
   library,
   activatingId,
   onActivate,
@@ -1716,6 +1727,7 @@ function Sidebar({
   onPickFile: () => void;
   onPickPhoto: () => void;
   onFileChange: (file: File | null) => void;
+  onAskAboutLatest: () => void;
   library: LibraryPack[];
   activatingId: string | null;
   onActivate: (pack: LibraryPack) => void;
@@ -1862,6 +1874,26 @@ function Sidebar({
               <p style={{ marginTop: 2, fontSize: 11, color: "var(--ink-muted)" }}>
                 {uploadFilename}
               </p>
+            )}
+            {uploadStage === 'ready' && (
+              <button
+                type="button"
+                onClick={onAskAboutLatest}
+                className="btn btn-violet"
+                style={{
+                  marginTop: 10,
+                  width: "100%",
+                  justifyContent: "center",
+                  fontSize: 13,
+                  padding: "10px 14px",
+                }}
+              >
+                Ask Echo about it
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M5 12h14" />
+                  <path d="m12 5 7 7-7 7" />
+                </svg>
+              </button>
             )}
             {busy && (
               <div

@@ -14,6 +14,10 @@ type Mode = 'tutor' | 'storybook' | 'skills' | 'reading';
 type CurriculumFile = {
   filename: string;
   data: Buffer;
+  // Set per actual file extension so we attach as the right Claude content
+  // part. Mixing these up (e.g. sending a JPEG as application/pdf) makes
+  // Anthropic return "invalid PDF" and the whole turn fails.
+  mediaType: 'application/pdf' | 'image/jpeg' | 'image/png' | 'image/webp';
 };
 
 type ChildRow = {
@@ -136,8 +140,14 @@ export async function POST(req: Request) {
             }
 
             const buffer = Buffer.from(await fileData.arrayBuffer());
-            curriculumFiles.push({ filename: doc.filename, data: buffer });
-            trace.push(`attached:${doc.filename}:${buffer.length}bytes`);
+            const ext = (doc.storage_path as string).split('.').pop()?.toLowerCase() ?? '';
+            const mediaType: CurriculumFile['mediaType'] =
+              ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+              : ext === 'png' ? 'image/png'
+              : ext === 'webp' ? 'image/webp'
+              : 'application/pdf';
+            curriculumFiles.push({ filename: doc.filename, data: buffer, mediaType });
+            trace.push(`attached:${doc.filename}:${buffer.length}bytes:${mediaType}`);
           }
         }
       }
@@ -146,8 +156,12 @@ export async function POST(req: Request) {
 
   console.log('[chat] pipeline:', trace.join(' | '));
 
-  // Attach PDFs to the latest user message (Tutor mode only — Storybook never
-  // reaches here because we skip the fetch above).
+  // Attach curriculum docs to the latest user message (Tutor mode only —
+  // Storybook never reaches here because we skip the fetch above). Branch
+  // on actual file type: PDFs use the `file` content part (the SDK's
+  // PDF-handling path); JPEG/PNG/WebP camera-captures use the `image`
+  // content part. Mixing these (sending a JPEG as application/pdf) makes
+  // Anthropic return "invalid PDF" and the whole turn fails.
   if (curriculumFiles.length > 0) {
     for (let i = coreMessages.length - 1; i >= 0; i--) {
       const msg = coreMessages[i];
@@ -155,12 +169,20 @@ export async function POST(req: Request) {
       const userText = typeof msg.content === 'string' ? msg.content : '';
       msg.content = [
         { type: 'text', text: userText },
-        ...curriculumFiles.map((f) => ({
-          type: 'file' as const,
-          data: f.data,
-          mediaType: 'application/pdf',
-          filename: f.filename,
-        })),
+        ...curriculumFiles.map((f) =>
+          f.mediaType === 'application/pdf'
+            ? {
+                type: 'file' as const,
+                data: f.data,
+                mediaType: 'application/pdf' as const,
+                filename: f.filename,
+              }
+            : {
+                type: 'image' as const,
+                image: f.data,
+                mediaType: f.mediaType,
+              }
+        ),
       ];
       break;
     }
