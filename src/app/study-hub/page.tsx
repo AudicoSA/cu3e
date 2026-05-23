@@ -51,10 +51,10 @@ const storybookChatKey = (childId: string) => `cu3e.lastChat:${childId}:storyboo
 
 const TUTOR_INTRO = {
   title: "Tutor mode",
-  body: "Drop a homework PDF in the sidebar, or just type what you're stuck on. Echo will help you think — not hand over the answer.",
+  body: "Drop a homework PDF, snap a photo of your worksheet, or just type what you're stuck on. Echo helps you think — not hand over the answer.",
   prompts: [
-    "Help me with my Patterns homework",
-    "I don't get this problem",
+    "Play a counting game with me",
+    "Help me with my homework",
     "Quiz me on what I just read",
   ],
 };
