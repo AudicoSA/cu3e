@@ -165,11 +165,19 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
       // to satisfy TS since our runtime ISO-639-1 codes match the enum
       // values EL accepts.
       const ttsOverride = data.ttsVoiceId ? { voiceId: data.ttsVoiceId } : null;
-      const agentOverride =
-        data.languageCode && data.languageCode !== "en"
-          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            { language: data.languageCode as any }
-          : null;
+      // TEMPORARILY DISABLED — EL was closing the WebSocket on connect when
+      // we passed agent.language='af'/'zu' overrides. The override permission
+      // is enabled on the agent (tts.voice_id + agent.language both true),
+      // but EL likely requires the language to be pre-registered in the
+      // agent's language_presets (which our PATCH attempts couldn't set
+      // remotely — possibly UI-only or premium-tier). Disabling the language
+      // override means EL's STT defaults to English; Adele's voice still
+      // speaks Afrikaans (her native accent), and our custom LLM still
+      // generates Afrikaans output via the system-prompt directive — so
+      // Echo still speaks Afrikaans, just with EL's English-mode STT
+      // listening. We re-enable this when language_presets is figured out.
+      const agentOverride = null as null | { language: string };
+      void data.languageCode;
 
       startSession({
         signedUrl: data.signedUrl,
