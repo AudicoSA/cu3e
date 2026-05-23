@@ -39,7 +39,7 @@ export default function Home() {
             </p>
             <div className="hero-cta-row">
               <a href="/register" className="btn btn-violet btn-lg">
-                Start 14-day trial <Arrow />
+                Start 21-day trial <Arrow />
               </a>
               <a href="#demo" className="btn btn-ghost btn-lg">
                 <Play /> Watch Echo in action
@@ -516,10 +516,10 @@ export default function Home() {
               <h3>Trial</h3>
               <div className="plan-price">
                 <span className="amount">R0</span>
-                <span className="period">/ 14 days</span>
+                <span className="period">/ 21 days</span>
               </div>
               <p className="muted" style={{ fontSize: 13, margin: 0 }}>
-                Full access. No card required. We email you on day 12 before anything happens.
+                Full access. No card required. We email you on day 19 before anything happens.
               </p>
               <ul>
                 <li><Check /> All 3 modes</li>
@@ -610,7 +610,7 @@ export default function Home() {
         <div className="container">
           <div className="cta-card">
             <span className="eyebrow" style={{ position: "relative" }}>
-              Two minutes to set up · 14 days free
+              Two minutes to set up · 21 days free
             </span>
             <h2 className="h-section">
               Add your child. Upload one worksheet.
@@ -619,7 +619,7 @@ export default function Home() {
             </h2>
             <p>
               Echo is waiting. The kids who get this early will be the ones who lead — not just
-              cope with — what&apos;s coming. The trial is free for 14 days. There&apos;s no catch.
+              cope with — what&apos;s coming. The trial is free for 21 days. There&apos;s no catch.
             </p>
             <div className="cta-actions">
               <a href="/register" className="btn btn-violet btn-lg">Start free trial <Arrow /></a>

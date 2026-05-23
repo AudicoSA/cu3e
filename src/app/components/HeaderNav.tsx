@@ -114,9 +114,14 @@ export default function HeaderNav({ isAuthed }: Props) {
           style={{
             position: "fixed",
             inset: 0,
-            zIndex: 200,
-            background: "rgba(7, 8, 13, 0.97)",
-            backdropFilter: "blur(20px)",
+            // Bumped high enough to escape the .nav stacking context (which
+            // sits at z-index 50 with its own stacking context) and to outrank
+            // any other interior z-indexed sections on the page.
+            zIndex: 9999,
+            // Fully opaque dark bg — was rgba(7,8,13,0.97) + backdrop-blur,
+            // which on some mobile browsers fell back to transparent and made
+            // the menu text overlay the page content.
+            background: "#07080d",
             display: "flex",
             flexDirection: "column",
             padding: "20px 24px 32px",

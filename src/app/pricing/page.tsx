@@ -36,7 +36,7 @@ export default function Pricing() {
             <h3>Trial</h3>
             <div className="plan-price">
               <span className="amount">R0</span>
-              <span className="period">/ 14 days</span>
+              <span className="period">/ 21 days</span>
             </div>
             <p className="muted" style={{ fontSize: 13, margin: 0 }}>
               Full access. No card required. We email you on day 12 before anything happens.
