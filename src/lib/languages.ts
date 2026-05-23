@@ -18,11 +18,23 @@ export const SUPPORTED_LANGUAGES: Array<{
   native: string;
   // ISO 639-1 (matches `code`) but spelled out for the voice-agent override.
   iso: string;
+  // ElevenLabs voice ID for native-sounding TTS in this language. Used by
+  // /api/voice-session to override the agent's default voice when the
+  // child's preferred_language isn't English. Null = use agent default.
+  voiceId: string | null;
 }> = [
-  { code: "en", label: "English", native: "English", iso: "en" },
-  { code: "af", label: "Afrikaans", native: "Afrikaans", iso: "af" },
-  { code: "zu", label: "isiZulu", native: "isiZulu", iso: "zu" },
+  { code: "en", label: "English", native: "English", iso: "en", voiceId: null },
+  // Adele — Afrikaans voice (EL voice library)
+  { code: "af", label: "Afrikaans", native: "Afrikaans", iso: "af", voiceId: "zx7xpccUD1nCkqUuxIGc" },
+  // Thandi — isiZulu voice (EL voice library)
+  { code: "zu", label: "isiZulu", native: "isiZulu", iso: "zu", voiceId: "BcpjRWrYhDBHmOnetmBl" },
 ];
+
+// Voice ID for a given language code. Returns null when the agent's default
+// voice should be used (English, or a language without a configured voice).
+export function voiceIdForLanguage(code: LanguageCode): string | null {
+  return SUPPORTED_LANGUAGES.find((l) => l.code === code)?.voiceId ?? null;
+}
 
 export function isSupportedLanguage(code: string | null | undefined): code is LanguageCode {
   return code === "en" || code === "af" || code === "zu";

@@ -1,7 +1,7 @@
 import { generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { createClient } from '@/utils/supabase/server';
-import { buildLanguageHint, isSupportedLanguage, type LanguageCode } from '@/lib/languages';
+import { buildLanguageHint, isSupportedLanguage, voiceIdForLanguage, type LanguageCode } from '@/lib/languages';
 
 export const maxDuration = 30;
 
@@ -219,12 +219,18 @@ Output: just the spoken line.`;
       return Response.json({ error: 'no signed_url in response' }, { status: 500 });
     }
 
-    // Second voice for the 'big' age band (>=10). Kids older than 9 find the
-    // playful agent voice too childish; this lets us override at session-open
-    // without spinning up a second agent. ELEVENLABS_VOICE_ID_MATURE must be
-    // set in env; if unset, fall through to the agent's default voice.
+    // Voice ID priority (first match wins):
+    //   1. Per-language voice (Adele for Afrikaans, Thandi for isiZulu).
+    //      A 12yo Afrikaans kid hears the Afrikaans voice, not the mature
+    //      English one — language coherence trumps age coherence.
+    //   2. Mature voice for the 'big' age band (>=10) via env var
+    //      ELEVENLABS_VOICE_ID_MATURE. English-only fallback for older kids.
+    //   3. null → fall through to the agent's default voice.
+    const langVoiceId = voiceIdForLanguage(langCode);
     const matureVoiceId = process.env.ELEVENLABS_VOICE_ID_MATURE || null;
-    const ttsVoiceId = ageBand === 'big' && matureVoiceId ? matureVoiceId : null;
+    const ttsVoiceId =
+      langVoiceId
+      ?? (ageBand === 'big' && matureVoiceId ? matureVoiceId : null);
 
     return Response.json({
       signedUrl: data.signed_url,
