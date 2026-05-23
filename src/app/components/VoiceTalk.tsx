@@ -176,7 +176,8 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
       // generates Afrikaans output via the system-prompt directive — so
       // Echo still speaks Afrikaans, just with EL's English-mode STT
       // listening. We re-enable this when language_presets is figured out.
-      const agentOverride = null as null | { language: string };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const agentOverride: { language: any } | null = null;
       void data.languageCode;
 
       startSession({
