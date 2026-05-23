@@ -12,6 +12,7 @@ import Screensaver from "../components/Screensaver";
 import CameraCapture from "../components/CameraCapture";
 import { useVoiceAugment } from "@/hooks/useVoiceAugment";
 import { useWakeWord } from "@/hooks/useWakeWord";
+import { useWakeLock } from "@/hooks/useWakeLock";
 
 type Child = {
   id: string;
@@ -532,6 +533,12 @@ export default function StudyHub() {
     onWake: onWakeWord,
   });
 
+  // Hold a screen wake lock for the whole /study-hub session — keeps the
+  // kiosk tablet from auto-sleeping mid-chat regardless of Android display-
+  // timeout settings. Auto re-acquires on visibilitychange. Released on
+  // navigation away.
+  useWakeLock(!!selectedChildId);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sceneImages]);
@@ -964,7 +971,7 @@ export default function StudyHub() {
         >
           {/* Header */}
           <div className="chat-header" style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)" }}>
-            <div className="avatar">
+            <div className="avatar echo-avatar">
               <Image src="/echo.png" alt="Echo" fill sizes="36px" style={{ objectFit: "cover" }} />
             </div>
             <div style={{ flex: 1 }}>
@@ -1256,6 +1263,7 @@ export default function StudyHub() {
                 ) : (
                   <div key={m.id} style={{ alignSelf: "flex-start", display: "flex", gap: 12, maxWidth: "88%" }}>
                     <div
+                      className="echo-avatar"
                       style={{
                         width: 28,
                         height: 28,

@@ -20,7 +20,7 @@ Single-page snapshot. Grouped by *when*, not by feature area.
 
 Mostly shipped, two open items:
 
-- **Page-level Wake Lock on `/study-hub`** so the kiosk tablet never auto-sleeps from study-hub regardless of Android settings. Today we only hold the lock while the screensaver is up; OS can sleep before the screensaver activates.
+- ~~Page-level Wake Lock on `/study-hub`~~ — SHIPPED 2026-05-23. New `useWakeLock()` hook holds a screen lock for the whole study-hub session and re-acquires on visibilitychange. Tablet stays awake regardless of Android display-timeout settings.
 - **Per-session voice minute budget** + UI cap. Belt-and-braces with the 45s auto-sleep — defends against runaway EL spend if any client-side detection ever misses.
 
 ---
@@ -64,7 +64,7 @@ Mostly shipped, two open items:
 
   **Until this exists**, the FAQ answer is overpromising — soften the copy ("CAPS pack coming first, with others on the roadmap") OR build at least one pack before promoting the line.
 - **Higgsfield Seedance for "story climax" video** — a standout moment per storybook generates a short animated video instead of a static image. Needs `HIGGSFIELD_API_KEY` + custom fetch integration.
-- **Owl idle animation** — subtle blinking / head-turn / "thinking" states for Echo on the chat avatar. Lottie or CSS. The screensaver already has the gentle breathing version; this is the in-chat one.
+- ~~Owl idle animation~~ — SHIPPED 2026-05-23. Pure CSS — gentle breathe + occasional blink (brightness flash, weighted heavily toward eyes-open so it reads as a real blink). Applied to chat-header avatar + each Echo message bubble's avatar; staggered animation-delay so multiple owls don't blink in unison. Respects `prefers-reduced-motion`.
 - ~~`/parents` deep-dive page~~ — SHIPPED 2026-05-23. Reuses the real `ChildAnalytics`, `NotificationsBanner`, and (extracted) `CurriculumProgressCard` with mocked Tatum + Ella data so visitors see exactly what they'd get post-signup. Five slabs: hero, activity charts, breakthroughs, AI Skills progress, worksheet progress, Sunday-briefing recap, final CTA. Sunday-briefing homepage link now points at `/parents`. Header nav "For parents" same.
 
 - **Multilingual support — Afrikaans first, then Zulu/Xhosa.** Potential game-changer for SA market (where Maski, Aida, Luma compete free on WhatsApp in English). Strategic call: Afrikaans first because (a) Ashton-tier families have Afrikaans home-speakers and it deepens the existing premium segment without diluting positioning, (b) AI model quality in Afrikaans is near-English so it's a clean shipping test before tackling Bantu languages, (c) genuinely underserved by current SA AI tutors. Implementation: add `children.preferred_language` column → inject into system prompts in `/api/chat` and `/api/voice-llm` ("Speak to ${name} in ${language} unless they switch to English"). EL agent multilingual config for voice. UI i18n via next-intl. MVP ~1 day, full polish ~5 days. Already flagged on homepage pricing tier and FAQ as "English now · Afrikaans & Zulu next".

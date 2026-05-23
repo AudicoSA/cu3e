@@ -188,6 +188,38 @@ button { font: inherit; cursor: pointer; }
   font-size: 18px;
   letter-spacing: -0.02em;
 }
+/* ============================================================
+   Owl idle animation — adds subtle life to Echo's avatars in the
+   chat header and per-message in study-hub. Two layered animations:
+   a gentle breathe (scale) and an occasional blink (brightness flash).
+   The blink uses keyframe percentages weighted heavily toward "eyes
+   open" so the flash itself is brief; it reads as a real blink rather
+   than a strobe. Disable on prefers-reduced-motion.
+   ============================================================ */
+@keyframes echoOwlBreathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+@keyframes echoOwlBlink {
+  0%, 92%, 100% { filter: brightness(1) saturate(1); }
+  94% { filter: brightness(0.55) saturate(0.85); }
+  96% { filter: brightness(1) saturate(1); }
+}
+.echo-avatar {
+  animation:
+    echoOwlBreathe 4.2s ease-in-out infinite,
+    echoOwlBlink 6.3s ease-in-out infinite;
+  transform-origin: 50% 60%;
+}
+/* Stagger blink across multiple Echo avatars in the chat so they don't
+   all flutter in unison — adds organic-ness. */
+.echo-avatar:nth-of-type(2n) { animation-delay: 0s, 1.7s; }
+.echo-avatar:nth-of-type(3n) { animation-delay: 0s, 3.1s; }
+.echo-avatar:nth-of-type(4n) { animation-delay: 0s, 4.4s; }
+@media (prefers-reduced-motion: reduce) {
+  .echo-avatar { animation: none; }
+}
+
 .brand-logo {
   /* CU3E lockup: dark-navy + cyan strokes on a transparent background.
      invert(1) flips dark navy → light cream AND cyan → red.
