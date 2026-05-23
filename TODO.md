@@ -27,7 +27,31 @@ Mostly shipped, two open items:
 
 ## Product
 
-- **Multi-region curriculum library** — pre-loaded CAPS / Common Core / GCSE / IB / Australian packs so parents don't have to find their own PDFs to start. Content sourcing is the bulk of the work; the activation flow already exists.
+- **Multi-region curriculum library — pre-loaded starter packs.** This is a *promise made on the homepage FAQ* ("we're building starter packs for CAPS (SA), Common Core (US), GCSE/A-Levels (UK), IB, and the Australian Curriculum, one-click activate from the library"). The plumbing already exists — `curriculum_library` table, Library tile in study-hub, `/api/library/promote`, one-click activate flow. The gap is *content + curation*, not engineering. Scoping:
+
+  **What "starter pack" should contain (per curriculum):**
+  - Maths: 3-5 worksheet PDFs per grade (1-9), covering the major topics for that year. Grade 10-12 algebra/geometry/calculus for senior packs.
+  - English: literacy/phonics packs for grades 1-4; comprehension + essay-prompt packs for grades 5-12.
+  - Science: physical + life science worksheets, grades 4-12.
+  - Optional v2: history, geography, second-language packs.
+
+  **Content sourcing options (in order of legal cleanliness):**
+  - Original CU3E worksheets — write our own from scratch. Slow, fully ours, no licensing risk. Could AI-generate first drafts and human-review.
+  - Open-licensed material — Siyavula textbooks (CC BY-NC) for CAPS STEM, OpenStax for US, MIT OCW etc. Need to verify each license + attribute properly.
+  - Public-domain past papers — many education ministries publish past exam papers. Free to host with attribution.
+  - DO NOT host copyrighted publisher content (Macmillan, Pearson, Maskew Miller) without written permission.
+
+  **MVP definition (one curriculum, proving the flow):**
+  - Pick **CAPS** as the first pack (Kenny is SA, Tatum + Ella are CAPS, Siyavula CC content is available, the Library UI is already there).
+  - Seed ~12-15 PDFs covering Foundation Phase maths + literacy (Grades 1-3) so Tatum is a real test case.
+  - Each PDF needs `/api/extract-pdf` to run so it's queryable by Echo from upload.
+  - Tag each row with `region`, `grade`, `subject`, `is_published=true`, `source_attribution`.
+
+  **Engineering needed for MVP:** roughly zero — flow already exists end-to-end. Possibly a small filter UI ("Filter library by region/grade/subject") if the pack count grows.
+
+  **Real-time estimate:** ~2-3 days per curriculum if AI-generating with human review; ~1 week+ per curriculum if hand-curating from open sources. Total to fulfil the FAQ promise: 2-6 weeks depending on depth + how many curricula we ship at v1.
+
+  **Until this exists**, the FAQ answer is overpromising — soften the copy ("CAPS pack coming first, with others on the roadmap") OR build at least one pack before promoting the line.
 - **Higgsfield Seedance for "story climax" video** — a standout moment per storybook generates a short animated video instead of a static image. Needs `HIGGSFIELD_API_KEY` + custom fetch integration.
 - **Owl idle animation** — subtle blinking / head-turn / "thinking" states for Echo on the chat avatar. Lottie or CSS. The screensaver already has the gentle breathing version; this is the in-chat one.
 - **`/parents` deep-dive page** — dedicated marketing surface for the rigorous-buyer parent. The Sunday-briefing section on the homepage is the emotional hook (Ava reads a 90s sample); `/parents` is where convinced parents click through to see the *substance*: dashboard tour, charts, breakthrough notifications, per-skill progress ladder, weekly trend lines. The current "Plus a parent dashboard with charts…" link on the homepage points at `/pricing` as an interim — should point at `/parents` once it exists. Keeps the homepage breathing room while giving serious buyers a real conversion close.
@@ -38,7 +62,6 @@ Mostly shipped, two open items:
 
 ## Tech debt / paper cuts
 
-- **`middleware.ts` → `proxy.ts` rename** — Next 16 deprecation. Already renamed (`src/proxy.ts`), this entry can be deleted from the list.
 - **`createServerClient` cookie API deprecation** — Supabase SSR is warning the old `cookies.get()` signature is deprecated. Migrate to `getAll`/`setAll`.
 - **Migrate other pages to design-system tokens** — login / register / dashboard / skills / study-hub partially on inline styles. Should eventually use the same class-based system as the homepage.
 
