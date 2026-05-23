@@ -1,6 +1,7 @@
 import Image from "next/image";
 import HomeModes from "./components/HomeModes";
 import HomeFAQ from "./components/HomeFAQ";
+import WeeklyBriefingPlayer from "./components/WeeklyBriefingPlayer";
 
 const Check = ({ size = 14 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
@@ -198,6 +199,69 @@ export default function Home() {
             </div>
           </div>
         </div>
+      </section>
+
+      {/* ---------- SUNDAY BRIEFING ---------- */}
+      <section className="sunday-briefing">
+        <div className="container sunday-briefing-grid">
+          <div className="sunday-briefing-copy">
+            <span className="eyebrow">For the parent who wants to know</span>
+            <h2 className="h-section" style={{ marginTop: 16, fontSize: "clamp(36px, 4.8vw, 56px)" }}>
+              Every Sunday, the briefing <span className="serif-italic accent">arrives.</span>
+            </h2>
+            <p style={{ marginTop: 20, color: "var(--ink-soft)", fontSize: 17, lineHeight: 1.6, maxWidth: 540 }}>
+              Not a dashboard you have to remember to open. A 90-second audio summary, in a real voice,
+              of what your child worked on this week — what tripped them up, what they finally
+              cracked, what to keep an eye on next.
+            </p>
+            <WeeklyBriefingPlayer />
+          </div>
+          <div className="sunday-briefing-visual">
+            <Image
+              src="/marketing/sunday-briefing.png"
+              alt="Parent listening to the weekly briefing on a Sunday morning, phone in hand, coffee beside them."
+              fill
+              sizes="(min-width: 920px) 44vw, 100vw"
+              style={{ objectFit: "cover" }}
+            />
+          </div>
+        </div>
+        <style>{`
+          .sunday-briefing {
+            padding: 96px 0;
+            background:
+              radial-gradient(ellipse at top left, rgba(240, 179, 64, 0.06) 0%, transparent 50%),
+              radial-gradient(ellipse at bottom right, rgba(78, 216, 235, 0.05) 0%, transparent 50%),
+              var(--bg);
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+          }
+          .sunday-briefing-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+            gap: 56px;
+            align-items: center;
+          }
+          .sunday-briefing-copy {
+            min-width: 0;
+          }
+          .sunday-briefing-visual {
+            position: relative;
+            aspect-ratio: 4 / 3;
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-soft);
+          }
+          @media (max-width: 920px) {
+            .sunday-briefing { padding: 64px 0; }
+            .sunday-briefing-grid {
+              grid-template-columns: 1fr;
+              gap: 32px;
+            }
+            .sunday-briefing-visual { aspect-ratio: 3 / 2; }
+          }
+        `}</style>
       </section>
 
       {/* ---------- HOW IT WORKS ---------- */}
