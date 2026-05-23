@@ -226,8 +226,32 @@ Output: just the spoken line.`;
     //   2. Mature voice for the 'big' age band (>=10) via env var
     //      ELEVENLABS_VOICE_ID_MATURE. English-only fallback for older kids.
     //   3. null → fall through to the agent's default voice.
-    const langVoiceId = voiceIdForLanguage(langCode);
+    let langVoiceId = voiceIdForLanguage(langCode);
     const matureVoiceId = process.env.ELEVENLABS_VOICE_ID_MATURE || null;
+
+    // Pre-flight: if a voice override is set but the voice isn't actually
+    // in the workspace library, EL silently fails the WebSocket connection
+    // → kids stuck on "Connecting" forever. Verify first; if missing,
+    // unset the override (we'd rather fall back to the agent default than
+    // brick voice mode for the whole session).
+    if (langVoiceId) {
+      try {
+        const check = await fetch(`https://api.elevenlabs.io/v1/voices/${langVoiceId}`, {
+          headers: { 'xi-api-key': apiKey },
+          // short timeout via abort signal — never let the preflight hold
+          // up the whole route
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!check.ok) {
+          console.warn(`[voice-session] voice ${langVoiceId} for ${langCode} not in library (${check.status}) — falling back to agent default`);
+          langVoiceId = null;
+        }
+      } catch (e) {
+        console.warn('[voice-session] voice preflight failed:', e instanceof Error ? e.message : String(e));
+        langVoiceId = null;
+      }
+    }
+
     const ttsVoiceId =
       langVoiceId
       ?? (ageBand === 'big' && matureVoiceId ? matureVoiceId : null);
