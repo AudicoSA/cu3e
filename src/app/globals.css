@@ -188,6 +188,17 @@ button { font: inherit; cursor: pointer; }
   font-size: 18px;
   letter-spacing: -0.02em;
 }
+.brand-logo {
+  /* CU3E lockup is dark navy on white. invert() flips dark→cream and the
+     white background → near-black so it disappears into the dark page bg. */
+  height: 28px;
+  width: auto;
+  filter: invert(1) brightness(1.4);
+  transition: filter 200ms ease;
+}
+.brand-logo:hover {
+  filter: invert(1) brightness(1.6);
+}
 .brand-mark {
   width: 30px;
   height: 30px;

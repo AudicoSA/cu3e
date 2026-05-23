@@ -45,11 +45,15 @@ export default async function RootLayout({
       <body>
         <header className="nav">
           <div className="nav-inner">
-            <a href="/" className="brand" style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-              <span className="brand-mark">
-                <Image src="/echo.png" alt="" fill sizes="30px" style={{ objectFit: "cover" }} />
-              </span>
-              CU3E
+            <a href="/" className="brand" style={{ display: "inline-flex", alignItems: "center", gap: 12 }} aria-label="CU3E home">
+              <Image
+                src="/Cu3E_Logo.png"
+                alt="CU3E"
+                width={520}
+                height={208}
+                priority
+                className="brand-logo"
+              />
               <span
                 style={{
                   fontFamily: "var(--font-mono)",
@@ -78,11 +82,14 @@ export default async function RootLayout({
           <div className="container">
             <div className="row">
               <div className="flex-row">
-                <span className="brand">
-                  <span className="brand-mark">
-                    <Image src="/echo.png" alt="" fill sizes="30px" style={{ objectFit: "cover" }} />
-                  </span>
-                  CU3E
+                <span className="brand" style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
+                  <Image
+                    src="/Cu3E_Logo.png"
+                    alt="CU3E"
+                    width={520}
+                    height={208}
+                    className="brand-logo"
+                  />
                 </span>
                 <span className="muted" style={{ marginLeft: 16 }}>
                   Early access · public launch later.
