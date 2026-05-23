@@ -86,6 +86,14 @@ export async function POST(req: Request) {
         ? brief.split('\n').slice(0, 4).join('\n')
         : '';
 
+      // Hours since the most recent message in chat_messages. Drives the
+      // "is this a fresh day or a continuation?" branch below.
+      let hoursSinceLast: number | null = null;
+      if (recentMsgs && recentMsgs[0]?.created_at) {
+        hoursSinceLast = (Date.now() - new Date(recentMsgs[0].created_at as string).getTime()) / (1000 * 60 * 60);
+      }
+      const isFreshDay = hoursSinceLast === null || hoursSinceLast > 12;
+
       console.log('[voice-session] memory',
         JSON.stringify({
           child: childName,
@@ -106,18 +114,29 @@ export async function POST(req: Request) {
           })
           .join('\n');
 
-        const synthPrompt = `You are crafting the OPENING LINE that voice-Echo will speak the moment ${childName} starts a chat. Echo's job is to make ${childName} feel REMEMBERED — pick up from where things left off the most recently.
+        const synthPrompt = `You are crafting the OPENING LINE that voice-Echo will speak the moment ${childName} starts a chat.
 
-Use whichever has more useful detail: the recent chats below (if present), or the running memory brief, or both.
+Hours since their last chat: ${hoursSinceLast === null ? 'never chatted before' : `${hoursSinceLast.toFixed(1)} hours`}.
+
+${isFreshDay
+  ? `IT'S A NEW DAY (>12 hours since last chat). Do NOT bring up specific topics from yesterday — ${childName} may have moved on, and starting a fresh session shouldn't feel like Echo is still stuck on what happened before. Open generically and warmly, inviting ${childName} to set the agenda. Light, no pressure.`
+  : `IT'S A CONTINUATION (within ~12 hours of the last chat). Pick up from where things left off — reference the specific topic, question, or stuck point. Make ${childName} feel REMEMBERED.`}
 
 Constraints:
 - ONE warm spoken sentence, max 22 words.
-- Reference something SPECIFIC they were doing (a topic, a question, a story, a stuck point) — not generic praise.
 - ${ageBand === 'little' ? 'Match a 6-9 year-old tone: simple, warm, a touch playful.' : 'Match a 10+ tone: smart-older-friend, direct, not gushy.'}
-- End by inviting them to keep going OR start something new — but only ONE question.
-- No quotes, no preamble, no "Hey there" cliches if you can name the topic.
+- End by inviting them in — but only ONE question.
+- No quotes, no preamble.
 
-If neither source has anything specific to pick up from, output exactly: "Hey ${childName} — what shall we get into today?"
+${isFreshDay
+  ? `Examples of GOOD fresh-day openers:
+    - "Hey ${childName} — what's on your mind today?"
+    - "Morning ${childName}, what are we doing?"
+    - "Hey ${childName}, ready for something new?"
+   Do NOT say "last time" or reference any past topic in a fresh-day opener.`
+  : `Examples of GOOD continuation openers:
+    - "Hey ${childName} — last time we were stuck on adding fractions. Want to keep going?"
+    - "Back already? Pick up the dragon story, or something different?"`}
 
 RECENT CHATS (most recent first to last):
 ${transcript || '(none)'}

@@ -205,7 +205,7 @@ function buildVoiceSystemPrompt(
       : `${name} is ${ageLabel}${gradeLabel}. Talk like a smart older friend — direct, curious, a little dry. Trust them.`;
 
   const memoryBlock = memoryBrief
-    ? `\n\nECHO REMEMBERS (your private notes about ${name} — never read these out loud, just let them shape how you respond):\n${memoryBrief}`
+    ? `\n\nECHO REMEMBERS (your private notes about ${name} — never read these out loud, just let them shape how you respond):\n${memoryBrief}\n\nIMPORTANT — this is BACKGROUND for understanding ${name}, NOT a list of topics to bring up. Do NOT lead with "last time we were doing X" unless ${name} brings it up themselves. If ${name} starts a fresh conversation about something new, follow their lead — never redirect to old topics.`
     : '';
 
   const usableCurriculum = curriculumTexts.filter((c) => c.text && c.text.trim().length > 80);

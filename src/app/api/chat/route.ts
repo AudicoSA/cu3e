@@ -367,7 +367,13 @@ function buildSystemPrompt(mode: Mode, child: ChildRow | null): string {
     ? `
 
 ECHO REMEMBERS (your private notes about ${name} — never read these out loud, just let them shape how you respond):
-${memoryBrief}`
+${memoryBrief}
+
+IMPORTANT — how to USE this memory:
+- This is BACKGROUND for understanding ${name}, NOT a list of topics to bring up.
+- Do NOT lead with "last time we were doing X" unless ${name} mentions it themselves.
+- If ${name} starts a fresh conversation about something new, follow their lead — don't redirect them back to old topics.
+- Use the memory to *understand* them (their style, where they tend to get stuck, what they like) — not to script the chat.`
     : '';
 
   // The "subliminal Layer 2" weaving — only used in Tutor mode for now.

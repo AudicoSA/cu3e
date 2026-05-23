@@ -25,6 +25,17 @@ Mostly shipped, two open items:
 
 ---
 
+## Echo Remembers — context staleness
+
+- **Time-decay the memory brief so a new day = a fresher start.** Kenny on 2026-05-23: *"tatum started a new chat — and it went on about something from yesterday — so perhaps context can time out, so if its a new day it can start again"*. Current behaviour: `children.memory_brief` is a running 30-day Haiku summary, injected into every system prompt, leading with a "Last session" bullet. Great for resuming a chat that ended mid-thought a few hours ago; jarring when a 6yo starts a NEW chat the next morning and Echo opens with yesterday's specific topic she's already moved on from. Three layered fixes (pick one or combine):
+  1. **Date-stamp every bullet in the brief** (Haiku prompt change) and instruct Echo in the system prompt to *only* surface a bullet proactively if the date is within the last 12 hours. Older bullets stay in context (for *if asked*) but Echo doesn't lead with them.
+  2. **Conditional "Last session" bullet** — re-frame Haiku's first bullet only when the most recent `chat_messages.created_at` is within ~12 hours; otherwise omit the bullet entirely and let Echo open generically ("Hey Tatum, what's up today?").
+  3. **Server-side opener decision** — in `/api/voice-session`'s opener-synth prompt, pass `hours_since_last_session` and instruct: "if > 12, open as if it's a fresh day; if ≤ 12, pick up where we left off". The opener stays warm-aware without being a stranger OR a stalker.
+
+  **Recommended:** ship #3 first (smallest change, biggest UX win, only touches /api/voice-session). Then #1 as a follow-up so text chat gets the same intelligence. Don't ship all three at once — risk over-correcting and losing the continuity that's a real differentiator.
+
+---
+
 ## Product
 
 - **Multi-region curriculum library — pre-loaded starter packs.** This is a *promise made on the homepage FAQ* ("we're building starter packs for CAPS (SA), Common Core (US), GCSE/A-Levels (UK), IB, and the Australian Curriculum, one-click activate from the library"). The plumbing already exists — `curriculum_library` table, Library tile in study-hub, `/api/library/promote`, one-click activate flow. The gap is *content + curation*, not engineering. Scoping:
