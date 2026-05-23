@@ -215,7 +215,7 @@ export default function Home() {
               cracked, what to keep an eye on next.
             </p>
             <WeeklyBriefingPlayer />
-            <a href="/pricing" className="sunday-briefing-deeper">
+            <a href="/parents" className="sunday-briefing-deeper">
               Plus a parent dashboard with charts, breakthrough alerts and per-skill progress
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M5 12h14" />

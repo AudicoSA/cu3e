@@ -50,6 +50,7 @@ export async function updateSession(request: NextRequest) {
     request.nextUrl.pathname !== '/' &&
     request.nextUrl.pathname !== '/pricing' &&
     request.nextUrl.pathname !== '/skills' &&
+    request.nextUrl.pathname !== '/parents' &&
     request.nextUrl.pathname !== '/privacy' &&
     request.nextUrl.pathname !== '/contact' &&
     request.nextUrl.pathname !== '/auth/callback' &&

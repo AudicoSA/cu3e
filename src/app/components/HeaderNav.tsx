@@ -62,7 +62,7 @@ export default function HeaderNav({ isAuthed }: Props) {
       <>
         <a href="/#modes" style={linkStyle} onClick={closeOnNav}>How it works</a>
         <a href="/#outcomes" style={linkStyle} onClick={closeOnNav}>Outcomes</a>
-        <a href="/#parents" style={linkStyle} onClick={closeOnNav}>For parents</a>
+        <a href="/parents" style={linkStyle} onClick={closeOnNav}>For parents</a>
         <a href="/pricing" style={linkStyle} onClick={closeOnNav}>Pricing</a>
         <a href="/#faq" style={linkStyle} onClick={closeOnNav}>FAQ</a>
       </>
