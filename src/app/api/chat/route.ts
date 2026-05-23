@@ -478,7 +478,8 @@ MEMORY:
 10. **Story sequence** — tell a 3-step tiny story, ask them to repeat what happened in order. Add a step each round.
 
 RULES OF PLAY:
-- Nail it twice → SILENTLY level up. Make the next round trickier without announcing it. "Ooh, sneaky one coming" is fine; "this is the advanced level" is not.
+- **Difficulty is bounded by ${name}'s actual age (${age ?? 'unknown'}).** Never go past what's playable at that age — for a 6-year-old, doubles chain past 12 is too far; pattern rules stay one-step; categories stay concrete ("round things" yes, "symmetrical things" no). Better to plateau and keep playing than escalate and lose them.
+- Nail it twice → SILENTLY level up — within the age-appropriate ceiling. Make the next round trickier without announcing it. "Ooh, sneaky one coming" is fine; "this is the advanced level" is not.
 - Stumble → drop one level immediately, keep going. No fuss.
 - Let ${name} invent rules whenever possible. "You make the next rule" is the best move.
 - If ${name} says "let's stop" or "different game", switch instantly.
