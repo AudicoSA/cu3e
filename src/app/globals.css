@@ -189,15 +189,18 @@ button { font: inherit; cursor: pointer; }
   letter-spacing: -0.02em;
 }
 .brand-logo {
-  /* CU3E lockup is dark navy on white. invert() flips dark→cream and the
-     white background → near-black so it disappears into the dark page bg. */
-  height: 28px;
+  /* CU3E lockup: dark-navy + cyan strokes on a transparent background.
+     invert(1) flips dark navy → light cream AND cyan → red.
+     hue-rotate(180deg) shifts the red back to cyan.
+     Net effect on dark theme: navy reads as warm cream-white, cyan accent
+     stays cyan, transparent areas stay transparent. */
+  height: 36px;
   width: auto;
-  filter: invert(1) brightness(1.4);
-  transition: filter 200ms ease;
+  filter: invert(1) hue-rotate(180deg);
+  transition: filter 200ms ease, opacity 200ms ease;
 }
 .brand-logo:hover {
-  filter: invert(1) brightness(1.6);
+  filter: invert(1) hue-rotate(180deg) brightness(1.15);
 }
 .brand-mark {
   width: 30px;

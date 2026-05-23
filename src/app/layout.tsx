@@ -47,10 +47,10 @@ export default async function RootLayout({
           <div className="nav-inner">
             <a href="/" className="brand" style={{ display: "inline-flex", alignItems: "center", gap: 12 }} aria-label="CU3E home">
               <Image
-                src="/Cu3E_Logo.png"
-                alt="CU3E"
-                width={520}
-                height={208}
+                src="/new_cu3e_logo.png"
+                alt="CU3E — AI Tutor"
+                width={1774}
+                height={887}
                 priority
                 className="brand-logo"
               />
