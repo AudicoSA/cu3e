@@ -194,7 +194,7 @@ button { font: inherit; cursor: pointer; }
      hue-rotate(180deg) shifts the red back to cyan.
      Net effect on dark theme: navy reads as warm cream-white, cyan accent
      stays cyan, transparent areas stay transparent. */
-  height: 36px;
+  height: 72px;
   width: auto;
   filter: invert(1) hue-rotate(180deg);
   transition: filter 200ms ease, opacity 200ms ease;
