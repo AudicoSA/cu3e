@@ -724,6 +724,11 @@ export default async function Dashboard() {
                         }}
                       >
                         Tutor: {child.ai_tutor_name}
+                        {child.preferred_language && child.preferred_language !== 'en' && (
+                          <span style={{ color: "var(--ink-muted)", marginLeft: 8 }}>
+                            · {child.preferred_language === 'af' ? 'Afrikaans' : 'isiZulu'}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </li>

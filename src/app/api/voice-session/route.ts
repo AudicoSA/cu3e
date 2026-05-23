@@ -1,6 +1,7 @@
 import { generateText } from 'ai';
 import { anthropic } from '@ai-sdk/anthropic';
 import { createClient } from '@/utils/supabase/server';
+import { buildLanguageHint, isSupportedLanguage, type LanguageCode } from '@/lib/languages';
 
 export const maxDuration = 30;
 
@@ -49,10 +50,12 @@ export async function POST(req: Request) {
   let openingLine = "Hey there — what shall we get into today?";
   let ageBand = "big"; // 'little' = age <= 9, 'big' = age 10+
 
+  let langCode: LanguageCode = 'en';
+
   if (requestedChildId) {
     const { data: childRow } = await supabase
       .from('children')
-      .select('id, first_name, age, grade, memory_brief')
+      .select('id, first_name, age, grade, memory_brief, preferred_language')
       .eq('id', requestedChildId)
       .eq('parent_id', user.id)
       .maybeSingle();
@@ -62,6 +65,9 @@ export async function POST(req: Request) {
       childAge = (childRow.age as number) ?? null;
       childGrade = (childRow.grade as string) ?? null;
       if (typeof childAge === 'number' && childAge <= 9) ageBand = 'little';
+      if (isSupportedLanguage(childRow.preferred_language as string | null)) {
+        langCode = childRow.preferred_language as LanguageCode;
+      }
 
       const brief = (childRow.memory_brief as string | null) ?? null;
       if (brief && brief.trim()) recentSummary = brief.trim();
@@ -114,9 +120,12 @@ export async function POST(req: Request) {
           })
           .join('\n');
 
+        const langName = buildLanguageHint(langCode);
         const synthPrompt = `You are crafting the OPENING LINE that voice-Echo will speak the moment ${childName} starts a chat.
 
 Hours since their last chat: ${hoursSinceLast === null ? 'never chatted before' : `${hoursSinceLast.toFixed(1)} hours`}.
+
+LANGUAGE: write the line in ${langName}.${langCode !== 'en' ? ` Natural, age-appropriate ${langName} — not stilted textbook ${langName}.` : ''}
 
 ${isFreshDay
   ? `IT'S A NEW DAY (>12 hours since last chat). Do NOT bring up specific topics from yesterday — ${childName} may have moved on, and starting a fresh session shouldn't feel like Echo is still stuck on what happened before. Open generically and warmly, inviting ${childName} to set the agenda. Light, no pressure.`
@@ -178,6 +187,10 @@ Output: just the spoken line.`;
     // Set the ElevenLabs agent's "First message" template to: {{opening_line}}
     // so the very first thing Echo says picks up from the last conversation.
     opening_line: openingLine,
+    // ISO 639-1 code (en/af/zu). EL also gets it via the overrides we return
+    // below; this dynamic var lets the agent's system-prompt template
+    // reference {{preferred_language}} if it ever needs to.
+    preferred_language: langCode,
     voice_band_instruction:
       ageBand === 'little'
         ? `You are talking to ${childName}, ${ageLabel}${gradeLabel}. Match their level: short words, gentler tone, playful. One idea per sentence.`
@@ -217,6 +230,11 @@ Output: just the spoken line.`;
       signedUrl: data.signed_url,
       dynamicVariables,
       ttsVoiceId,
+      // ISO 639-1 language code — VoiceTalk passes this as
+      // overrides.agent.language so EL's STT + agent know which language
+      // the kid is speaking. Without this, EL defaults to the agent's
+      // configured language (English) and Afrikaans/Zulu STT degrades.
+      languageCode: langCode,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

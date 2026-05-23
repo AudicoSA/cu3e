@@ -130,20 +130,38 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
         signedUrl: string;
         dynamicVariables?: Record<string, string | number | boolean>;
         ttsVoiceId?: string | null;
+        languageCode?: string | null;
       };
 
       // Ask for mic permission before starting — clearer UX than letting the
       // SDK silently fail.
       await navigator.mediaDevices.getUserMedia({ audio: true });
 
+      // Merge any per-session EL overrides. Two we use today:
+      //   tts.voiceId  — mature voice for age >=10 (env-var driven)
+      //   agent.language — child's preferred language (en/af/zu) so EL's
+      //                    STT + agent know which language to expect.
+      // EL's `language` field is a typed enum at the SDK boundary; we cast
+      // to satisfy TS since our runtime ISO-639-1 codes match the enum
+      // values EL accepts.
+      const ttsOverride = data.ttsVoiceId ? { voiceId: data.ttsVoiceId } : null;
+      const agentOverride =
+        data.languageCode && data.languageCode !== "en"
+          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            { language: data.languageCode as any }
+          : null;
+
       startSession({
         signedUrl: data.signedUrl,
         connectionType: "websocket",
         dynamicVariables: data.dynamicVariables ?? {},
-        // Second voice for >=10 — server returns the mature voice_id when the
-        // child's age band is 'big' and ELEVENLABS_VOICE_ID_MATURE is set.
-        ...(data.ttsVoiceId
-          ? { overrides: { tts: { voiceId: data.ttsVoiceId } } }
+        ...(ttsOverride || agentOverride
+          ? {
+              overrides: {
+                ...(ttsOverride ? { tts: ttsOverride } : {}),
+                ...(agentOverride ? { agent: agentOverride } : {}),
+              },
+            }
           : {}),
       });
     } catch (err) {

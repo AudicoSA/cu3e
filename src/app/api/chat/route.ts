@@ -3,6 +3,7 @@ import { anthropic } from '@ai-sdk/anthropic';
 import { createClient as createSupabaseAdmin } from '@supabase/supabase-js';
 import { createClient } from '@/utils/supabase/server';
 import { refreshChildMemory } from '@/lib/memory';
+import { buildLanguageDirective, isSupportedLanguage, type LanguageCode } from '@/lib/languages';
 import { randomUUID } from 'node:crypto';
 
 export const maxDuration = 30;
@@ -26,6 +27,7 @@ type ChildRow = {
   age: number | null;
   grade: string | null;
   memory_brief: string | null;
+  preferred_language: string | null;
 };
 
 export async function POST(req: Request) {
@@ -83,7 +85,7 @@ export async function POST(req: Request) {
     // otherwise fall back to the parent's first child.
     let query = supabase
       .from('children')
-      .select('id, first_name, age, grade, memory_brief')
+      .select('id, first_name, age, grade, memory_brief, preferred_language')
       .eq('parent_id', user.id);
     if (requestedChildId) query = query.eq('id', requestedChildId);
     const { data: children, error: childErr } = await query
@@ -352,6 +354,10 @@ function buildSystemPrompt(mode: Mode, child: ChildRow | null): string {
   const age = child?.age ?? null;
   const grade = child?.grade ?? null;
   const memoryBrief = child?.memory_brief ?? null;
+  const langCode: LanguageCode = isSupportedLanguage(child?.preferred_language)
+    ? child!.preferred_language as LanguageCode
+    : 'en';
+  const languageDirective = buildLanguageDirective(langCode, name);
   const band = ageBand(age);
 
   // Voice + complexity guidance, shared across modes
@@ -387,7 +393,7 @@ When the homework concept naturally connects to how AI works — patterns, learn
 The goal is that over months ${name} grows up native to thinking about how AI works, without ever feeling lectured. If there's no natural hook, skip it.`;
 
   if (mode === 'skills') {
-    return `You are 'Echo', and right now you are running an AI Literacy lesson for ${name}.
+    return `${languageDirective}You are 'Echo', and right now you are running an AI Literacy lesson for ${name}.
 
 ${voice}${memory}
 
@@ -412,7 +418,7 @@ RULES:
   }
 
   if (mode === 'reading') {
-    return `You are 'Echo', helping ${name} practise reading aloud.
+    return `${languageDirective}You are 'Echo', helping ${name} practise reading aloud.
 
 ${voice}${memory}
 
@@ -441,7 +447,7 @@ If a homework PDF is attached, you can offer a passage from it — but ${name} s
   }
 
   if (mode === 'storybook') {
-    return `You are 'Echo', a creative writing partner for ${name}.
+    return `${languageDirective}You are 'Echo', a creative writing partner for ${name}.
 
 ${voice}${memory}
 
@@ -460,7 +466,7 @@ If ${name} hasn't started yet, ask ONE question to launch: a character, a place,
   }
 
   // Default: tutor mode
-  return `You are 'Echo', the AI tutor for ${name} on CU3E.
+  return `${languageDirective}You are 'Echo', the AI tutor for ${name} on CU3E.
 
 ${voice}${memory}
 

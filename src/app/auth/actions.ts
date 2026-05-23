@@ -111,6 +111,8 @@ export async function addChild(formData: FormData) {
   const tutorName = formData.get('tutorName') as string || 'Echo'
   const school = formData.get('school') as string
   const grade = formData.get('grade') as string
+  const rawLang = formData.get('preferredLanguage') as string | null
+  const preferredLanguage = rawLang === 'af' || rawLang === 'zu' ? rawLang : 'en'
 
   const { error } = await supabase
     .from('children')
@@ -120,7 +122,8 @@ export async function addChild(formData: FormData) {
       age: age,
       ai_tutor_name: tutorName,
       school: school,
-      grade: grade
+      grade: grade,
+      preferred_language: preferredLanguage,
     })
 
   if (error) {

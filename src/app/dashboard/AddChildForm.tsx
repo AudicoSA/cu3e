@@ -117,6 +117,34 @@ export default function AddChildForm() {
           </select>
         </div>
 
+        <div>
+          <label
+            style={{
+              display: "block",
+              fontSize: 12,
+              fontWeight: 500,
+              marginBottom: 6,
+              color: "var(--ink-muted)",
+            }}
+          >
+            Echo speaks
+          </label>
+          <select
+            name="preferredLanguage"
+            defaultValue="en"
+            className="field"
+            style={{ background: "var(--surface)" }}
+          >
+            <option value="en">English</option>
+            <option value="af">Afrikaans</option>
+            <option value="zu">isiZulu</option>
+          </select>
+          <p style={{ marginTop: 6, fontSize: 11.5, color: "var(--ink-muted)", lineHeight: 1.5 }}>
+            Echo speaks the language you pick. Bilingual kids can still switch
+            to English mid-chat — Echo follows their lead.
+          </p>
+        </div>
+
         <button
           type="submit"
           disabled={isPending}

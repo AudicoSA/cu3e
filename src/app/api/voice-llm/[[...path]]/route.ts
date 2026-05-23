@@ -1,4 +1,5 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { buildLanguageDirective, isSupportedLanguage, type LanguageCode } from '@/lib/languages';
 
 export const maxDuration = 60;
 
@@ -70,6 +71,7 @@ export async function POST(req: Request) {
     age: number | null;
     grade: string | null;
     memory_brief: string | null;
+    preferred_language: string | null;
   };
   let child: Child | null = null;
   const curriculumTexts: Array<{ filename: string; text: string }> = [];
@@ -81,7 +83,7 @@ export async function POST(req: Request) {
     const [childRes, docsRes] = await Promise.all([
       supabase
         .from('children')
-        .select('id, first_name, age, grade, memory_brief')
+        .select('id, first_name, age, grade, memory_brief, preferred_language')
         .eq('id', childId)
         .maybeSingle(),
       supabase
@@ -188,13 +190,23 @@ function ageBand(age: number | null | undefined): 'little' | 'big' {
 }
 
 function buildVoiceSystemPrompt(
-  child: { first_name: string; age: number | null; grade: string | null; memory_brief: string | null } | null,
+  child: {
+    first_name: string;
+    age: number | null;
+    grade: string | null;
+    memory_brief: string | null;
+    preferred_language: string | null;
+  } | null,
   curriculumTexts: Array<{ filename: string; text: string }>
 ): string {
   const name = child?.first_name ?? 'the child';
   const age = child?.age ?? null;
   const grade = child?.grade ?? null;
   const memoryBrief = child?.memory_brief ?? null;
+  const langCode: LanguageCode = isSupportedLanguage(child?.preferred_language)
+    ? (child!.preferred_language as LanguageCode)
+    : 'en';
+  const languageDirective = buildLanguageDirective(langCode, name);
   const band = ageBand(age);
   const ageLabel = typeof age === 'number' ? `${age} years old` : 'around 10';
   const gradeLabel = grade ? ` (${grade})` : '';
@@ -220,7 +232,7 @@ You CAN reference specific problems, rules, examples and numbers from the curric
     curriculumBlock = `\n\nNOTE: ${name} has uploaded homework PDFs but they're image-based and you can't read the text directly. If they ask about a specific problem, ask them to read it aloud to you first, then guide them from there.`;
   }
 
-  return `You are Echo, an AI tutor on CU3E. The child is talking to you with their voice — they hear you, they speak to you. This is a real conversation, not text.
+  return `${languageDirective}You are Echo, an AI tutor on CU3E. The child is talking to you with their voice — they hear you, they speak to you. This is a real conversation, not text.
 
 ABOUT ${name.toUpperCase()}:
 ${voiceBand}${memoryBlock}
