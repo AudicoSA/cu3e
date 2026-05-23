@@ -101,6 +101,26 @@ function Overlay({ onClose, childId }: { onClose: () => void; childId: string | 
       const c = (meta as { conversation_id?: string }).conversation_id;
       if (c) conversationIdRef.current = c;
     },
+    // Surface any EL error to the UI + console. Without this, override
+    // rejections (bad voice_id, disallowed language override, etc.) fail
+    // silently — the modal sits on "Connecting" forever.
+    onError: (err) => {
+      const msg =
+        typeof err === "string"
+          ? err
+          : (err as { message?: string })?.message ?? JSON.stringify(err);
+      console.error("[voice] EL error:", err);
+      setError(`Voice error: ${msg}`);
+    },
+    onDisconnect: (info) => {
+      // Disconnect with a reason that isn't a normal user-close = surface it
+      // so we know what happened.
+      const reason = (info as { reason?: string; message?: string })?.reason
+        ?? (info as { reason?: string; message?: string })?.message;
+      if (reason && reason !== "user") {
+        console.warn("[voice] EL disconnect:", info);
+      }
+    },
   });
 
   // Track isSpeaking on a ref so the silence-watch interval below sees the
