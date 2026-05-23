@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 type Props = {
   isAuthed: boolean;
@@ -11,6 +12,10 @@ type Props = {
 // `isAuthed` is resolved server-side in layout.tsx and passed in.
 export default function HeaderNav({ isAuthed }: Props) {
   const [open, setOpen] = useState(false);
+  // Track client mount so we can safely call createPortal (which needs
+  // document, only available client-side).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   // Lock body scroll when menu is open
   useEffect(() => {
@@ -105,8 +110,13 @@ export default function HeaderNav({ isAuthed }: Props) {
         </svg>
       </button>
 
-      {/* Mobile overlay menu */}
-      {open && (
+      {/* Mobile overlay menu — rendered via React Portal at <body> root.
+          IMPORTANT: must NOT live inside <header class="nav"> because .nav
+          has backdrop-filter set, which makes it a containing block for
+          position: fixed descendants — meaning a "fixed inset:0" overlay
+          inside .nav gets clipped to the nav strip, not the viewport.
+          Portal escapes that entirely. */}
+      {open && mounted && createPortal(
         <div
           role="dialog"
           aria-modal="true"
@@ -114,13 +124,7 @@ export default function HeaderNav({ isAuthed }: Props) {
           style={{
             position: "fixed",
             inset: 0,
-            // Bumped high enough to escape the .nav stacking context (which
-            // sits at z-index 50 with its own stacking context) and to outrank
-            // any other interior z-indexed sections on the page.
             zIndex: 9999,
-            // Fully opaque dark bg — was rgba(7,8,13,0.97) + backdrop-blur,
-            // which on some mobile browsers fell back to transparent and made
-            // the menu text overlay the page content.
             background: "#07080d",
             display: "flex",
             flexDirection: "column",
@@ -193,7 +197,8 @@ export default function HeaderNav({ isAuthed }: Props) {
               </>
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       <style>{`
