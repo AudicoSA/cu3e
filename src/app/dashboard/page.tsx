@@ -5,6 +5,7 @@ import WeeklyOverview from "./WeeklyOverview";
 import ChildAnalytics from "./ChildAnalytics";
 import NotificationsBanner, { type ParentNotification } from "./NotificationsBanner";
 import CurriculumProgressCard from "./CurriculumProgressCard";
+import ChildLanguagePicker from "./ChildLanguagePicker";
 import { logout } from "../auth/actions";
 import Link from "next/link";
 import { SKILL_LESSONS, FOUNDATIONS_SKILLS, detectSkillFromMessage } from "@/lib/skills";
@@ -724,12 +725,11 @@ export default async function Dashboard() {
                         }}
                       >
                         Tutor: {child.ai_tutor_name}
-                        {child.preferred_language && child.preferred_language !== 'en' && (
-                          <span style={{ color: "var(--ink-muted)", marginLeft: 8 }}>
-                            · {child.preferred_language === 'af' ? 'Afrikaans' : 'isiZulu'}
-                          </span>
-                        )}
                       </div>
+                      <ChildLanguagePicker
+                        childId={child.id as string}
+                        current={(child.preferred_language as string | null) ?? null}
+                      />
                     </div>
                   </li>
                 ))}

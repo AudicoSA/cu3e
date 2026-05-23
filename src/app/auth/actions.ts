@@ -100,6 +100,30 @@ export async function updatePassword(formData: FormData) {
   redirect('/dashboard')
 }
 
+// Update an existing child's preferred language. Used by the inline toggle
+// on the dashboard child card so a parent can flip Tatum to Afrikaans
+// without going through the full Add Child form.
+export async function setChildLanguage(childId: string, language: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const safe = language === 'af' || language === 'zu' ? language : 'en'
+
+  const { error } = await supabase
+    .from('children')
+    .update({ preferred_language: safe })
+    .eq('id', childId)
+    .eq('parent_id', user.id)
+
+  if (error) {
+    console.error('Error updating child language:', error)
+    return { error: error.message }
+  }
+
+  revalidatePath('/dashboard')
+}
+
 export async function addChild(formData: FormData) {
   const supabase = await createClient()
   
