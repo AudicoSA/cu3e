@@ -24,16 +24,12 @@ export const SUPPORTED_LANGUAGES: Array<{
   voiceId: string | null;
 }> = [
   { code: "en", label: "English", native: "English", iso: "en", voiceId: null },
-  // Afrikaans + isiZulu voice IDs are intentionally NULL — see TODO.md
-  // "Native-voice TTS for af/zu". The EL public library has voices labelled
-  // "South African" (Adele zx7xpccUD1nCkqUuxIGc, Thandi BcpjRWrYhDBHmOnetmBl,
-  // Charles Onselen IT5cb4lfodSX8eyXUzyO) but their fine-tuning is "en
-  // (south african)" — SA-accented English speakers, not native af/zu.
-  // Feeding them non-English text produces phonetic-English mispronunciation.
-  // Until we voice-clone a native Afrikaans + isiZulu speaker, we fall back
-  // to the agent's default voice (which is also English-trained — same
-  // problem, but at least it's the consistent Echo voice).
-  { code: "af", label: "Afrikaans", native: "Afrikaans", iso: "af", voiceId: null },
+  // Charles Onselen — Kenny tested the preview and his Afrikaans accent
+  // is solid (despite EL metadata listing him as "en (south african)").
+  // Added to the workspace library as "Charles Onselen - Afrikaans Echo".
+  { code: "af", label: "Afrikaans", native: "Afrikaans", iso: "af", voiceId: "IT5cb4lfodSX8eyXUzyO" },
+  // isiZulu still null — no native isiZulu voice in EL's library yet.
+  // Kenny's friend speaks Zulu and is the natural first voice-clone subject.
   { code: "zu", label: "isiZulu", native: "isiZulu", iso: "zu", voiceId: null },
 ];
 
