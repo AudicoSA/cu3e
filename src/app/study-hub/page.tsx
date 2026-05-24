@@ -998,6 +998,8 @@ export default function StudyHub() {
             activatingId={activatingId}
             onActivate={activateLibraryPack}
             onPromote={promoteDocToLibrary}
+            childGrade={selectedChild?.grade ?? null}
+            childFirstName={selectedChild?.first_name ?? null}
           />
         )}
 
@@ -1764,6 +1766,8 @@ function Sidebar({
   activatingId,
   onActivate,
   onPromote,
+  childGrade,
+  childFirstName,
 }: {
   documents: CurriculumDoc[];
   uploadStage: 'idle' | 'uploading' | 'extracting' | 'ready' | 'error';
@@ -1777,6 +1781,8 @@ function Sidebar({
   activatingId: string | null;
   onActivate: (pack: LibraryPack) => void;
   onPromote: (doc: CurriculumDoc) => void;
+  childGrade: string | null;
+  childFirstName: string | null;
 }) {
   const activeStoragePaths = new Set(documents.map((d) => d.storage_path));
   const busy = uploadStage === 'uploading' || uploadStage === 'extracting';
@@ -2041,6 +2047,8 @@ function Sidebar({
           activeStoragePaths={activeStoragePaths}
           activatingId={activatingId}
           onActivate={onActivate}
+          childGrade={childGrade}
+          childFirstName={childFirstName}
         />
       )}
     </aside>
@@ -2056,129 +2064,229 @@ function LibrarySection({
   activeStoragePaths,
   activatingId,
   onActivate,
+  childGrade,
+  childFirstName,
 }: {
   library: LibraryPack[];
   activeStoragePaths: Set<string>;
   activatingId: string | null;
   onActivate: (pack: LibraryPack) => void;
+  childGrade: string | null;
+  childFirstName: string | null;
 }) {
-  const [phase, setPhase] = useState<"all" | "foundation" | "intermediate" | "senior">("all");
-  const [subject, setSubject] = useState<string>("all");
+  const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
+  const [showAllGrades, setShowAllGrades] = useState(false);
 
-  const phaseOf = (grade: string | null): "foundation" | "intermediate" | "senior" | "other" => {
-    if (!grade) return "other";
-    const m = grade.match(/\d+/);
-    if (!m) return "other";
-    const n = parseInt(m[0], 10);
-    if (n >= 1 && n <= 3) return "foundation";
-    if (n >= 4 && n <= 6) return "intermediate";
-    if (n >= 7 && n <= 9) return "senior";
-    return "other";
+  // Short label for the spine — "English Home Language" -> "English", FAL
+  // collapsed, "Natural Sciences" stays as-is.
+  const shortSubject = (s: string) =>
+    s
+      .replace(/ Home Language$/, "")
+      .replace(/ First Additional Language$/, " (FAL)")
+      .replace(/Economic and Management Sciences/, "EMS");
+
+  // Per-subject colour palette — pulls a "library" feel: warm spines + a few
+  // cool tones. Picked to be distinct enough that kids can recognise a
+  // subject by its book at a glance.
+  const spineFor = (subject: string): { bg: string; ink: string; band: string } => {
+    const palette: Record<string, { bg: string; ink: string; band: string }> = {
+      "Mathematics":                          { bg: "linear-gradient(180deg, #1a2548 0%, #0e162e 100%)", ink: "#f0f4ff", band: "#4a5fb8" },
+      "English Home Language":                { bg: "linear-gradient(180deg, #6b1a2a 0%, #3d0d18 100%)", ink: "#fbe9d8", band: "#c97a55" },
+      "Natural Sciences":                     { bg: "linear-gradient(180deg, #1f3d2c 0%, #0f2118 100%)", ink: "#e8f0d8", band: "#5fa177" },
+      "Afrikaans First Additional Language":  { bg: "linear-gradient(180deg, #b8581c 0%, #6b3010 100%)", ink: "#fff3df", band: "#e8a661" },
+      "isiZulu First Additional Language":    { bg: "linear-gradient(180deg, #8a3322 0%, #4a1a10 100%)", ink: "#fde5d3", band: "#d2845f" },
+      "Life Skills":                          { bg: "linear-gradient(180deg, #3a2768 0%, #1e1340 100%)", ink: "#e8def8", band: "#7c5fc4" },
+      "Social Sciences":                      { bg: "linear-gradient(180deg, #4a2f1a 0%, #28190d 100%)", ink: "#f0d8b8", band: "#a87b4f" },
+      "Economic and Management Sciences":     { bg: "linear-gradient(180deg, #2a2520 0%, #14110e 100%)", ink: "#e8c87a", band: "#c4a14f" },
+      "Creative Arts":                        { bg: "linear-gradient(180deg, #1a4a52 0%, #0d2528 100%)", ink: "#cef0e8", band: "#5fb8b0" },
+    };
+    return palette[subject] ?? { bg: "linear-gradient(180deg, #3a3a3a 0%, #1f1f1f 100%)", ink: "#eee", band: "#888" };
   };
 
-  // Subject chips are derived from the library so they appear automatically as
-  // new subjects get seeded (English next, then Natural Sciences, languages, etc.).
-  const subjects = Array.from(new Set(library.map((p) => p.subject))).sort();
-
-  const filtered = library.filter((p) => {
-    if (phase !== "all" && phaseOf(p.grade) !== phase) return false;
-    if (subject !== "all" && p.subject !== subject) return false;
-    return true;
-  });
-
-  const phaseChips: Array<{ key: typeof phase; label: string }> = [
-    { key: "all", label: "All phases" },
-    { key: "foundation", label: "Foundation · G1-3" },
-    { key: "intermediate", label: "Intermediate · G4-6" },
-    { key: "senior", label: "Senior · G7-9" },
+  // Subjects appear in the bookshelf in this order, falling back to whatever
+  // exists in the library if a subject isn't listed here.
+  const subjectOrder = [
+    "Mathematics",
+    "English Home Language",
+    "Natural Sciences",
+    "Social Sciences",
+    "Life Skills",
+    "Economic and Management Sciences",
+    "Creative Arts",
+    "Afrikaans First Additional Language",
+    "isiZulu First Additional Language",
+  ];
+  const subjectsInLibrary = Array.from(new Set(library.map((p) => p.subject)));
+  const subjects = [
+    ...subjectOrder.filter((s) => subjectsInLibrary.includes(s)),
+    ...subjectsInLibrary.filter((s) => !subjectOrder.includes(s)),
   ];
 
-  // Short label so the chip row doesn't wrap awkwardly. "English Home
-  // Language" → "English", "Natural Sciences" stays as-is.
-  const shortSubject = (s: string) =>
-    s.replace(/ Home Language$/, "").replace(/ First Additional Language$/, " (FAL)");
+  // The pack list the user actually sees: filtered to the child's grade
+  // (unless they explicitly toggled "show all grades") AND to the open
+  // book's subject (no book open = no list).
+  const packsForSubject = (subj: string) =>
+    library.filter((p) => {
+      if (p.subject !== subj) return false;
+      if (!showAllGrades && childGrade && p.grade !== childGrade) return false;
+      return true;
+    });
+
+  // Total count per subject (respects the grade filter) — used to show "5"
+  // on the spine and to grey out spines with zero packs for this child.
+  const countForSubject = (subj: string) => packsForSubject(subj).length;
+
+  const filtered = selectedSubject ? packsForSubject(selectedSubject) : [];
 
   return (
     <div>
-      <span className="eyebrow">From the library</span>
-      <p style={{ marginTop: 8, fontSize: 11.5, color: "var(--ink-muted)", lineHeight: 1.5 }}>
-        One-click curriculum packs Echo can teach from.{" "}
-        <span style={{ color: "var(--ink-muted)" }}>
-          {filtered.length === library.length
-            ? `${library.length} packs.`
-            : `${filtered.length} of ${library.length} packs.`}
-        </span>
+      <span className="eyebrow">CU3E Library</span>
+      <p style={{ marginTop: 6, fontSize: 11.5, color: "var(--ink-muted)", lineHeight: 1.5 }}>
+        {childGrade && !showAllGrades
+          ? <>Books on the shelf for <strong style={{ color: "var(--ink)" }}>{childFirstName ?? "this learner"}</strong> ({childGrade}). Pick a book to see what's inside.</>
+          : <>One-click curriculum packs Echo can teach from. Pick a book to browse.</>
+        }
       </p>
 
-      <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {phaseChips.map((c) => {
-          const selected = phase === c.key;
+      {/* Bookshelf — a row of vertical spines, each labelled with its subject. */}
+      <div
+        style={{
+          marginTop: 12,
+          padding: "10px 6px 14px",
+          borderRadius: 8,
+          background: "linear-gradient(180deg, transparent 0%, transparent 90%, var(--surface-2) 90%, var(--surface-2) 100%)",
+          borderBottom: "3px solid var(--border-strong)",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 4,
+          justifyContent: "flex-start",
+          alignItems: "flex-end",
+        }}
+      >
+        {subjects.map((s) => {
+          const count = countForSubject(s);
+          const empty = count === 0;
+          const open = selectedSubject === s;
+          const { bg, ink, band } = spineFor(s);
+          const label = shortSubject(s);
+          // Vary heights slightly so books look like real books on a shelf.
+          const heights = [136, 144, 128, 140, 132, 138, 130, 142, 134];
+          const h = heights[subjects.indexOf(s) % heights.length];
+
           return (
             <button
-              key={c.key}
+              key={s}
               type="button"
-              onClick={() => setPhase(c.key)}
+              onClick={() => !empty && setSelectedSubject(open ? null : s)}
+              disabled={empty}
+              title={empty ? `${label} — no packs at ${childGrade ?? "this grade"} yet` : label}
               style={{
-                padding: "4px 10px",
-                borderRadius: 999,
-                border: selected ? "1px solid var(--violet)" : "1px solid var(--border)",
-                background: selected ? "rgba(139,92,246,0.12)" : "transparent",
-                color: selected ? "var(--violet)" : "var(--ink-muted)",
-                fontSize: 10.5,
-                fontFamily: "var(--font-mono)",
-                letterSpacing: "0.04em",
-                cursor: "pointer",
-                transition: "background 150ms ease, border-color 150ms ease, color 150ms ease",
+                width: 30,
+                height: h,
+                padding: 0,
+                border: "none",
+                borderRadius: "3px 3px 1px 1px",
+                background: empty ? "linear-gradient(180deg, #2a2a30 0%, #1a1a1f 100%)" : bg,
+                color: empty ? "#555" : ink,
+                cursor: empty ? "not-allowed" : "pointer",
+                position: "relative",
+                opacity: empty ? 0.4 : 1,
+                transform: open ? "translateY(-6px)" : "translateY(0)",
+                transition: "transform 180ms ease, filter 180ms ease",
+                filter: open ? "brightness(1.15)" : "brightness(1)",
+                boxShadow: open
+                  ? "0 6px 12px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.1)"
+                  : "1px 0 0 rgba(0,0,0,0.25), inset 0 0 0 1px rgba(255,255,255,0.04)",
               }}
+              onMouseOver={(e) => { if (!empty && !open) e.currentTarget.style.transform = "translateY(-3px)"; }}
+              onMouseOut={(e) => { if (!open) e.currentTarget.style.transform = "translateY(0)"; }}
             >
-              {c.label}
+              {/* Top decorative band */}
+              <div style={{ position: "absolute", top: 8, left: 0, right: 0, height: 4, background: empty ? "transparent" : band, opacity: 0.7 }} />
+              {/* Bottom decorative band */}
+              <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, height: 4, background: empty ? "transparent" : band, opacity: 0.7 }} />
+              {/* Vertical spine title — bottom-up reading like a real book */}
+              <div
+                style={{
+                  position: "absolute",
+                  top: 18,
+                  bottom: 18,
+                  left: 0,
+                  right: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  writingMode: "vertical-rl",
+                  transform: "rotate(180deg)",
+                  fontFamily: "var(--font-serif)",
+                  fontSize: 10.5,
+                  letterSpacing: "0.04em",
+                  textAlign: "center",
+                  textShadow: empty ? "none" : "0 1px 0 rgba(0,0,0,0.4)",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                }}
+              >
+                {label}
+              </div>
+              {/* Count badge — only when there are packs */}
+              {!empty && (
+                <span
+                  style={{
+                    position: "absolute",
+                    bottom: 2,
+                    left: 0,
+                    right: 0,
+                    textAlign: "center",
+                    fontSize: 9,
+                    fontFamily: "var(--font-mono)",
+                    color: ink,
+                    opacity: 0.7,
+                  }}
+                >
+                  {count}
+                </span>
+              )}
             </button>
           );
         })}
       </div>
 
-      {subjects.length > 1 && (
-        <div style={{ marginTop: 8 }}>
-          <select
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "8px 10px",
-              borderRadius: 8,
-              border: "1px solid var(--border-strong)",
-              background: "var(--bg-elev)",
-              color: "var(--ink)",
-              fontSize: 12.5,
-              fontFamily: "var(--font-sans)",
-              cursor: "pointer",
-              appearance: "none",
-              backgroundImage:
-                "url(\"data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236f7480' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e\")",
-              backgroundRepeat: "no-repeat",
-              backgroundPosition: "right 10px center",
-              paddingRight: 28,
-            }}
-          >
-            <option value="all">All subjects</option>
-            {subjects.map((s) => (
-              <option key={s} value={s}>
-                {shortSubject(s)}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/* Optional: show packs from other grades too. Only show the toggle if
+          a grade is set + there are extra packs to potentially reveal. */}
+      {childGrade && (
+        <button
+          type="button"
+          onClick={() => setShowAllGrades((v) => !v)}
+          style={{
+            marginTop: 8,
+            background: "transparent",
+            border: "none",
+            color: "var(--ink-muted)",
+            fontSize: 11,
+            fontFamily: "var(--font-mono)",
+            letterSpacing: "0.04em",
+            cursor: "pointer",
+            padding: 0,
+            textDecoration: "underline",
+            textDecorationColor: "var(--border)",
+          }}
+        >
+          {showAllGrades ? `← Back to ${childGrade} only` : "Show packs from other grades"}
+        </button>
       )}
 
-      <ul style={{ marginTop: 12, listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-        {filtered.length === 0 ? (
-          <li style={{ fontSize: 12, color: "var(--ink-muted)", fontStyle: "italic" }}>
-            No packs in this phase yet.
-          </li>
-        ) : (
-          filtered.map((pack) => {
-            const active = activeStoragePaths.has(pack.storage_path);
-            const busy = activatingId === pack.id;
+      {/* Pack list — only renders once a book is open. */}
+      {selectedSubject && (
+        <ul style={{ marginTop: 14, listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+          {filtered.length === 0 ? (
+            <li style={{ fontSize: 12, color: "var(--ink-muted)", fontStyle: "italic" }}>
+              No {shortSubject(selectedSubject)} packs for {childGrade ?? "this learner"} yet.
+            </li>
+          ) : (
+            filtered.map((pack) => {
+              const active = activeStoragePaths.has(pack.storage_path);
+              const busy = activatingId === pack.id;
               return (
                 <li
                   key={pack.id}
@@ -2203,7 +2311,7 @@ function LibrarySection({
                   >
                     <span style={{ color: "var(--violet)" }}>{pack.region}</span>
                     {pack.grade && <span>· {pack.grade}</span>}
-                    <span>· {pack.subject}</span>
+                    <span>· {shortSubject(pack.subject)}</span>
                   </div>
                   <div
                     style={{
@@ -2248,8 +2356,9 @@ function LibrarySection({
                 </li>
               );
             })
-        )}
-      </ul>
+          )}
+        </ul>
+      )}
     </div>
   );
 }
