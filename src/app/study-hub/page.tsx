@@ -38,6 +38,13 @@ type LibraryPack = {
   description: string | null;
   storage_path: string;
   source_attribution: string | null;
+  // When the library pack ships with pre-extracted content (CAPS Foundation
+  // Phase pack and similar), activation copies these straight to the
+  // curriculum_documents row — no Claude vision call, no 10-30s wait, voice
+  // works the instant the pack is activated. Null = legacy pack, activation
+  // falls through to /api/extract-pdf as before.
+  extracted_text: string | null;
+  question_count: number | null;
 };
 
 type Mode = "tutor" | "storybook" | "skills" | "reading";
@@ -304,7 +311,7 @@ export default function StudyHub() {
     (async () => {
       const { data } = await supabase
         .from("curriculum_library")
-        .select("id, region, grade, subject, title, description, storage_path, source_attribution")
+        .select("id, region, grade, subject, title, description, storage_path, source_attribution, extracted_text, question_count")
         .eq("is_published", true)
         .order("region", { ascending: true });
       if (cancelled || !data) return;
@@ -341,11 +348,22 @@ export default function StudyHub() {
       setActivatingId(pack.id);
       try {
         const filename = `${pack.region} · ${pack.grade ? pack.grade + " · " : ""}${pack.title}.pdf`;
+        // If the library pack ships with pre-extracted text (CAPS Foundation
+        // Phase pack and similar), copy it straight to the document row so
+        // Echo can discuss it the instant the parent activates — no
+        // Claude vision call, no 10-30s "extracting…" wait, no extra cost.
         const { error: insErr } = await supabase.from("curriculum_documents").insert({
           child_id: selectedChildId,
           filename,
           storage_path: pack.storage_path,
           is_active: true,
+          ...(pack.extracted_text
+            ? {
+                extracted_text: pack.extracted_text,
+                extracted_at: new Date().toISOString(),
+                question_count: pack.question_count ?? null,
+              }
+            : {}),
         });
         if (insErr) throw insErr;
 
