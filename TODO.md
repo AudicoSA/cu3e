@@ -41,7 +41,7 @@ Mostly shipped, two open items:
 - **CAPS subject queue (build order).** Maths + English already shipped. Each new subject = one `seed_caps_*.py` script following the same pattern. Per-subject scripts intentionally stay independent (read end-to-end) — refactor into a shared `seed_lib.py` once we hit 5+.
   - ✅ Mathematics — 48 packs G1-9 (`seed_caps_foundation.py`)
   - ✅ English Home Language — 45 packs G1-9 (`seed_caps_english.py`)
-  - **Natural Sciences** — next. ~30 packs across G4-9 (no NatSci in Foundation Phase). Physical, life, earth + space. Sits naturally next to Maths.
+  - ✅ Natural Sciences — 30 packs G4-9 (`seed_caps_natural_sciences.py`). Life, Matter, Energy, Earth.
   - **Afrikaans First Additional Language** — ~30 packs G1-9. Pairs with the Afrikaans voice (Charles Onselen). Vocab, grammar, basic reading.
   - **isiZulu First Additional Language** — ~30 packs G1-9. Waiting on native voice clone (Kenny's friend) for the voice side; text packs can ship independently.
   - **Life Skills (G1-3) → Life Orientation (G7-9)** — ~25 packs. Health, safety, social, civic.
