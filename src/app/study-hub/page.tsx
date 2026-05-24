@@ -2014,15 +2014,99 @@ function Sidebar({
 
       {/* Curriculum library — pre-curated starter packs */}
       {library.length > 0 && (
-        <div>
-          <span className="eyebrow">From the library</span>
-          <p style={{ marginTop: 8, fontSize: 11.5, color: "var(--ink-muted)", lineHeight: 1.5 }}>
-            One-click curriculum packs Echo can teach from.
-          </p>
-          <ul style={{ marginTop: 12, listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-            {library.map((pack) => {
-              const active = activeStoragePaths.has(pack.storage_path);
-              const busy = activatingId === pack.id;
+        <LibrarySection
+          library={library}
+          activeStoragePaths={activeStoragePaths}
+          activatingId={activatingId}
+          onActivate={onActivate}
+        />
+      )}
+    </aside>
+  );
+}
+
+// CAPS Foundation Phase = G1-3, Intermediate = G4-6, Senior = G7-9. Filter
+// chips group the 45-pack catalogue so parents/kids can find their grade
+// without scrolling. "All" is the default. Phase chip is derived from the
+// pack's grade string; non-CAPS packs (other regions) bucket into "Other".
+function LibrarySection({
+  library,
+  activeStoragePaths,
+  activatingId,
+  onActivate,
+}: {
+  library: LibraryPack[];
+  activeStoragePaths: Set<string>;
+  activatingId: string | null;
+  onActivate: (pack: LibraryPack) => void;
+}) {
+  const [phase, setPhase] = useState<"all" | "foundation" | "intermediate" | "senior">("all");
+
+  const phaseOf = (grade: string | null): "foundation" | "intermediate" | "senior" | "other" => {
+    if (!grade) return "other";
+    const m = grade.match(/\d+/);
+    if (!m) return "other";
+    const n = parseInt(m[0], 10);
+    if (n >= 1 && n <= 3) return "foundation";
+    if (n >= 4 && n <= 6) return "intermediate";
+    if (n >= 7 && n <= 9) return "senior";
+    return "other";
+  };
+
+  const filtered = phase === "all"
+    ? library
+    : library.filter((p) => phaseOf(p.grade) === phase);
+
+  const chips: Array<{ key: typeof phase; label: string }> = [
+    { key: "all", label: `All (${library.length})` },
+    { key: "foundation", label: "Foundation · G1-3" },
+    { key: "intermediate", label: "Intermediate · G4-6" },
+    { key: "senior", label: "Senior · G7-9" },
+  ];
+
+  return (
+    <div>
+      <span className="eyebrow">From the library</span>
+      <p style={{ marginTop: 8, fontSize: 11.5, color: "var(--ink-muted)", lineHeight: 1.5 }}>
+        One-click curriculum packs Echo can teach from.
+      </p>
+
+      <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {chips.map((c) => {
+          const selected = phase === c.key;
+          return (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => setPhase(c.key)}
+              style={{
+                padding: "4px 10px",
+                borderRadius: 999,
+                border: selected ? "1px solid var(--violet)" : "1px solid var(--border)",
+                background: selected ? "rgba(139,92,246,0.12)" : "transparent",
+                color: selected ? "var(--violet)" : "var(--ink-muted)",
+                fontSize: 10.5,
+                fontFamily: "var(--font-mono)",
+                letterSpacing: "0.04em",
+                cursor: "pointer",
+                transition: "background 150ms ease, border-color 150ms ease, color 150ms ease",
+              }}
+            >
+              {c.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <ul style={{ marginTop: 12, listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+        {filtered.length === 0 ? (
+          <li style={{ fontSize: 12, color: "var(--ink-muted)", fontStyle: "italic" }}>
+            No packs in this phase yet.
+          </li>
+        ) : (
+          filtered.map((pack) => {
+            const active = activeStoragePaths.has(pack.storage_path);
+            const busy = activatingId === pack.id;
               return (
                 <li
                   key={pack.id}
@@ -2091,11 +2175,10 @@ function Sidebar({
                   </button>
                 </li>
               );
-            })}
-          </ul>
-        </div>
-      )}
-    </aside>
+            })
+        )}
+      </ul>
+    </div>
   );
 }
 
