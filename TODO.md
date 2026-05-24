@@ -38,19 +38,21 @@ Mostly shipped, two open items:
 
 ## Product
 
-- **CAPS subject queue (build order).** Maths + English already shipped. Each new subject = one `seed_caps_*.py` script following the same pattern. Per-subject scripts intentionally stay independent (read end-to-end) — refactor into a shared `seed_lib.py` once we hit 5+.
+- **CAPS subject catalogue — SHIPPED (263 packs across 9 subjects).** Each subject = its own `seed_caps_*.py` script (intentionally self-contained for easy reading + edit-one-thing-at-a-time iteration). Refactor into shared `seed_lib.py` is fine but not urgent — the duplication is stable plumbing.
   - ✅ Mathematics — 48 packs G1-9 (`seed_caps_foundation.py`)
   - ✅ English Home Language — 45 packs G1-9 (`seed_caps_english.py`)
-  - ✅ Natural Sciences — 30 packs G4-9 (`seed_caps_natural_sciences.py`). Life, Matter, Energy, Earth.
-  - **Afrikaans First Additional Language** — ~30 packs G1-9. Pairs with the Afrikaans voice (Charles Onselen). Vocab, grammar, basic reading.
-  - **isiZulu First Additional Language** — ~30 packs G1-9. Waiting on native voice clone (Kenny's friend) for the voice side; text packs can ship independently.
-  - **Life Skills (G1-3) → Life Orientation (G7-9)** — ~25 packs. Health, safety, social, civic.
-  - **Social Sciences (History + Geography)** — ~35 packs G4-9 (two strands).
-  - **Economic & Management Sciences** — ~12 packs G7-9. Money, business basics.
-  - **Creative Arts** — ~12 packs G4-9. Visual, performance.
-  - **Total full-CAPS catalogue ≈ 220 packs.** Library UI already has phase + subject filter chips so this scales without UX pain.
-  - **Per-subject estimate:** ~3-4 hours of AI-generated content + human review per subject. ~2-3 days of focused work to ship the remaining 6 subjects end-to-end.
-  - After CAPS is complete, repeat the pattern for Common Core (US), GCSE (UK), IB, AusCurriculum — same script template, swap region + content. Each is its own multi-week effort.
+  - ✅ Natural Sciences — 30 packs G4-9 (`seed_caps_natural_sciences.py`)
+  - ✅ Afrikaans FAL — 32 packs G1-9 (`seed_caps_afrikaans_fal.py`). Pairs with Charles Onselen voice.
+  - ✅ isiZulu FAL — 32 packs G1-9 (`seed_caps_isizulu_fal.py`). **NATIVE-SPEAKER REVIEW PENDING** — flagged in source_attribution. Kenny's friend (native isiZulu speaker) is the right reviewer + voice-clone subject.
+  - ✅ Life Skills / Life Orientation — 26 packs G1-9 (`seed_caps_life_orientation.py`). Health, safety, relationships, citizenship, careers, mental health.
+  - ✅ Social Sciences — 25 packs G4-9 (`seed_caps_social_sciences.py`). SA + world history + geography.
+  - ✅ Economic & Management Sciences — 12 packs G7-9 (`seed_caps_ems.py`). Money, business, banking, SA economy.
+  - ✅ Creative Arts — 13 packs G4-9 (`seed_caps_creative_arts.py`). Visual art, music, drama, dance.
+  - **Content quality follow-ups:**
+    - isiZulu FAL needs native-speaker pass + voice clone for audio side
+    - Afrikaans FAL is v1 — could use teacher review (Adriaan's friend / Tatum's teacher at Ashton?)
+    - Life Orientation Senior Phase (G7-9) touches sensitive topics (substance abuse, sexuality, mental health) — content is age-appropriate but parents may want preview / opt-out per-child setting eventually
+  - **Next regions** (when CAPS is mature): Common Core (US), GCSE/A-Levels (UK), IB, Australian Curriculum — same script template, swap region + content. Each is its own multi-week effort.
 
 - **Multi-region curriculum library — pre-loaded starter packs.** This is a *promise made on the homepage FAQ* ("we're building starter packs for CAPS (SA), Common Core (US), GCSE/A-Levels (UK), IB, and the Australian Curriculum, one-click activate from the library"). The plumbing already exists — `curriculum_library` table, Library tile in study-hub, `/api/library/promote`, one-click activate flow. The gap is *content + curation*, not engineering. Scoping:
 
