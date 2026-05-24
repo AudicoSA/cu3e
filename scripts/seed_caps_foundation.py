@@ -1165,7 +1165,7 @@ def main() -> None:
         pdf = build_pdf(ws)
         upload_pdf(env, storage_path, pdf)
         insert_library_row(env, ws, storage_path)
-        print(f"  ✓ {ws['grade']:<8} · {ws['title']} ({len(ws['questions'])} Qs)")
+        print(f"  [ok] {ws['grade']:<8} - {ws['title']} ({len(ws['questions'])} Qs)")
     print(f"\nDone. {len(WORKSHEETS)} packs in the Study Hub library across Grades 1-9.")
 
 
