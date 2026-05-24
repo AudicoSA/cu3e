@@ -72,7 +72,12 @@ export async function POST(req: Request) {
   const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
+  // Two attach paths: text (cheap — inline as a system-style block in the
+  // user message) and binary (expensive — only for docs that *don't* have
+  // pre-extracted text, e.g. legacy uploads or parent photos before the
+  // extract pipeline finishes). The voice-llm route is text-only already.
   const curriculumFiles: CurriculumFile[] = [];
+  const curriculumTexts: Array<{ filename: string; text: string }> = [];
   const trace: string[] = [`mode:${mode}`];
   let child: ChildRow | null = null;
   let activeDocId: string | null = null;
@@ -128,6 +133,22 @@ export async function POST(req: Request) {
           }
 
           for (const doc of uniqueDocs) {
+            // Prefer pre-extracted text when we have it. A PDF binary is
+            // 5-10× the tokens of its extracted text, and library packs
+            // (plus parent uploads that finished /api/extract-pdf) all
+            // carry extracted_text. Fall back to the binary only for legacy
+            // docs or in-flight uploads that haven't been extracted yet.
+            const extractedText = (doc.extracted_text as string | null) ?? null;
+            if (extractedText && extractedText.trim()) {
+              const text =
+                extractedText.length > 20000
+                  ? extractedText.slice(0, 20000) + '\n…[truncated]'
+                  : extractedText;
+              curriculumTexts.push({ filename: doc.filename, text });
+              trace.push(`text:${doc.filename}:${text.length}c`);
+              continue;
+            }
+
             const { data: fileData, error: dlErr } = await supabase.storage
               .from('curriculum')
               .download(doc.storage_path);
@@ -158,34 +179,56 @@ export async function POST(req: Request) {
 
   console.log('[chat] pipeline:', trace.join(' | '));
 
-  // Attach curriculum docs to the latest user message (Tutor mode only —
-  // Storybook never reaches here because we skip the fetch above). Branch
-  // on actual file type: PDFs use the `file` content part (the SDK's
-  // PDF-handling path); JPEG/PNG/WebP camera-captures use the `image`
-  // content part. Mixing these (sending a JPEG as application/pdf) makes
-  // Anthropic return "invalid PDF" and the whole turn fails.
-  if (curriculumFiles.length > 0) {
+  // Attach curriculum to the latest user message (Tutor mode only —
+  // Storybook never reaches here because we skip the fetch above).
+  //
+  // Two attach paths:
+  //   - Text: pre-extracted content prepended as a labelled block above the
+  //     kid's question. Cheap, deterministic, the default for library packs
+  //     and any uploaded doc that has finished extraction.
+  //   - Binary: only for docs without extracted_text. PDFs use the `file`
+  //     content part; JPEG/PNG/WebP use `image`. Mixing these up makes
+  //     Anthropic return "invalid PDF" and the whole turn fails.
+  if (curriculumTexts.length > 0 || curriculumFiles.length > 0) {
     for (let i = coreMessages.length - 1; i >= 0; i--) {
       const msg = coreMessages[i];
       if (msg.role !== 'user') continue;
       const userText = typeof msg.content === 'string' ? msg.content : '';
-      msg.content = [
-        { type: 'text', text: userText },
-        ...curriculumFiles.map((f) =>
-          f.mediaType === 'application/pdf'
-            ? {
-                type: 'file' as const,
-                data: f.data,
-                mediaType: 'application/pdf' as const,
-                filename: f.filename,
-              }
-            : {
-                type: 'image' as const,
-                image: f.data,
-                mediaType: f.mediaType,
-              }
-        ),
-      ];
+
+      const textBlock =
+        curriculumTexts.length > 0
+          ? curriculumTexts
+              .map(
+                (d) =>
+                  `=== Worksheet: ${d.filename} ===\n${d.text}\n=== End ${d.filename} ===`,
+              )
+              .join('\n\n')
+          : '';
+      const combinedText = textBlock
+        ? `${textBlock}\n\n--- Child's message ---\n${userText}`
+        : userText;
+
+      if (curriculumFiles.length === 0) {
+        msg.content = combinedText;
+      } else {
+        msg.content = [
+          { type: 'text', text: combinedText },
+          ...curriculumFiles.map((f) =>
+            f.mediaType === 'application/pdf'
+              ? {
+                  type: 'file' as const,
+                  data: f.data,
+                  mediaType: 'application/pdf' as const,
+                  filename: f.filename,
+                }
+              : {
+                  type: 'image' as const,
+                  image: f.data,
+                  mediaType: f.mediaType,
+                }
+          ),
+        ];
+      }
       break;
     }
   }
