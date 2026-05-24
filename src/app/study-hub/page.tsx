@@ -2085,22 +2085,24 @@ function LibrarySection({
       .replace(/ First Additional Language$/, " (FAL)")
       .replace(/Economic and Management Sciences/, "EMS");
 
-  // Per-subject colour palette — pulls a "library" feel: warm spines + a few
-  // cool tones. Picked to be distinct enough that kids can recognise a
-  // subject by its book at a glance.
-  const spineFor = (subject: string): { bg: string; ink: string; band: string } => {
-    const palette: Record<string, { bg: string; ink: string; band: string }> = {
-      "Mathematics":                          { bg: "linear-gradient(180deg, #1a2548 0%, #0e162e 100%)", ink: "#f0f4ff", band: "#4a5fb8" },
-      "English Home Language":                { bg: "linear-gradient(180deg, #6b1a2a 0%, #3d0d18 100%)", ink: "#fbe9d8", band: "#c97a55" },
-      "Natural Sciences":                     { bg: "linear-gradient(180deg, #1f3d2c 0%, #0f2118 100%)", ink: "#e8f0d8", band: "#5fa177" },
-      "Afrikaans First Additional Language":  { bg: "linear-gradient(180deg, #b8581c 0%, #6b3010 100%)", ink: "#fff3df", band: "#e8a661" },
-      "isiZulu First Additional Language":    { bg: "linear-gradient(180deg, #8a3322 0%, #4a1a10 100%)", ink: "#fde5d3", band: "#d2845f" },
-      "Life Skills":                          { bg: "linear-gradient(180deg, #3a2768 0%, #1e1340 100%)", ink: "#e8def8", band: "#7c5fc4" },
-      "Social Sciences":                      { bg: "linear-gradient(180deg, #4a2f1a 0%, #28190d 100%)", ink: "#f0d8b8", band: "#a87b4f" },
-      "Economic and Management Sciences":     { bg: "linear-gradient(180deg, #2a2520 0%, #14110e 100%)", ink: "#e8c87a", band: "#c4a14f" },
-      "Creative Arts":                        { bg: "linear-gradient(180deg, #1a4a52 0%, #0d2528 100%)", ink: "#cef0e8", band: "#5fb8b0" },
+  // Per-subject palette: a Higgsfield-generated spine artwork (vintage
+  // leather + embossed gold/silver per subject) + an ink colour for the
+  // overlaid title + an accent band colour for the decorative stripes.
+  // The gradient is kept as a fallback background-color so the spine still
+  // looks "library shelf" while the webp is loading or if it fails.
+  const spineFor = (subject: string): { bg: string; img: string | null; ink: string; band: string } => {
+    const palette: Record<string, { bg: string; img: string | null; ink: string; band: string }> = {
+      "Mathematics":                          { bg: "linear-gradient(180deg, #1a2548 0%, #0e162e 100%)", img: "/spines/math.webp",      ink: "#f0f4ff", band: "#4a5fb8" },
+      "English Home Language":                { bg: "linear-gradient(180deg, #6b1a2a 0%, #3d0d18 100%)", img: "/spines/english.webp",   ink: "#fbe9d8", band: "#c97a55" },
+      "Natural Sciences":                     { bg: "linear-gradient(180deg, #1f3d2c 0%, #0f2118 100%)", img: "/spines/natsci.webp",    ink: "#e8f0d8", band: "#5fa177" },
+      "Afrikaans First Additional Language":  { bg: "linear-gradient(180deg, #b8581c 0%, #6b3010 100%)", img: "/spines/afrikaans.webp", ink: "#fff3df", band: "#e8a661" },
+      "isiZulu First Additional Language":    { bg: "linear-gradient(180deg, #8a3322 0%, #4a1a10 100%)", img: "/spines/isizulu.webp",   ink: "#fde5d3", band: "#d2845f" },
+      "Life Skills":                          { bg: "linear-gradient(180deg, #3a2768 0%, #1e1340 100%)", img: "/spines/life.webp",      ink: "#e8def8", band: "#7c5fc4" },
+      "Social Sciences":                      { bg: "linear-gradient(180deg, #4a2f1a 0%, #28190d 100%)", img: "/spines/social.webp",    ink: "#f0d8b8", band: "#a87b4f" },
+      "Economic and Management Sciences":     { bg: "linear-gradient(180deg, #2a2520 0%, #14110e 100%)", img: "/spines/ems.webp",       ink: "#e8c87a", band: "#c4a14f" },
+      "Creative Arts":                        { bg: "linear-gradient(180deg, #1a4a52 0%, #0d2528 100%)", img: "/spines/arts.webp",      ink: "#cef0e8", band: "#5fb8b0" },
     };
-    return palette[subject] ?? { bg: "linear-gradient(180deg, #3a3a3a 0%, #1f1f1f 100%)", ink: "#eee", band: "#888" };
+    return palette[subject] ?? { bg: "linear-gradient(180deg, #3a3a3a 0%, #1f1f1f 100%)", img: null, ink: "#eee", band: "#888" };
   };
 
   // Subjects appear in the bookshelf in this order, falling back to whatever
@@ -2167,7 +2169,7 @@ function LibrarySection({
           const count = countForSubject(s);
           const empty = count === 0;
           const open = selectedSubject === s;
-          const { bg, ink, band } = spineFor(s);
+          const { bg, img, ink, band } = spineFor(s);
           const label = shortSubject(s);
           // Vary heights slightly so books look like real books on a shelf.
           const heights = [136, 144, 128, 140, 132, 138, 130, 142, 134];
@@ -2186,7 +2188,11 @@ function LibrarySection({
                 padding: 0,
                 border: "none",
                 borderRadius: "3px 3px 1px 1px",
+                // Gradient as fallback colour; webp artwork on top.
                 background: empty ? "linear-gradient(180deg, #2a2a30 0%, #1a1a1f 100%)" : bg,
+                backgroundImage: empty || !img ? undefined : `url(${img}), ${bg}`,
+                backgroundSize: "cover, cover",
+                backgroundPosition: "center, center",
                 color: empty ? "#555" : ink,
                 cursor: empty ? "not-allowed" : "pointer",
                 position: "relative",
@@ -2201,10 +2207,31 @@ function LibrarySection({
               onMouseOver={(e) => { if (!empty && !open) e.currentTarget.style.transform = "translateY(-3px)"; }}
               onMouseOut={(e) => { if (!open) e.currentTarget.style.transform = "translateY(0)"; }}
             >
-              {/* Top decorative band */}
-              <div style={{ position: "absolute", top: 8, left: 0, right: 0, height: 4, background: empty ? "transparent" : band, opacity: 0.7 }} />
-              {/* Bottom decorative band */}
-              <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, height: 4, background: empty ? "transparent" : band, opacity: 0.7 }} />
+              {/* For empty (greyed) spines only — the artwork's embossed
+                  bands aren't present, so add CSS bands for visual structure. */}
+              {empty && (
+                <>
+                  <div style={{ position: "absolute", top: 8, left: 0, right: 0, height: 4, background: band, opacity: 0.7 }} />
+                  <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, height: 4, background: band, opacity: 0.7 }} />
+                </>
+              )}
+              {/* Readability strip behind the vertical title — keeps the
+                  text legible over the busy artwork. */}
+              {!empty && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 22,
+                    bottom: 22,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    width: 14,
+                    background: "rgba(0,0,0,0.32)",
+                    borderRadius: 4,
+                    backdropFilter: "blur(1px)",
+                  }}
+                />
+              )}
               {/* Vertical spine title — bottom-up reading like a real book */}
               <div
                 style={{
@@ -2222,7 +2249,7 @@ function LibrarySection({
                   fontSize: 10.5,
                   letterSpacing: "0.04em",
                   textAlign: "center",
-                  textShadow: empty ? "none" : "0 1px 0 rgba(0,0,0,0.4)",
+                  textShadow: empty ? "none" : "0 1px 2px rgba(0,0,0,0.85)",
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                 }}
