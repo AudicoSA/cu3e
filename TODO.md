@@ -38,6 +38,20 @@ Mostly shipped, two open items:
 
 ## Product
 
+- **CAPS subject queue (build order).** Maths + English already shipped. Each new subject = one `seed_caps_*.py` script following the same pattern. Per-subject scripts intentionally stay independent (read end-to-end) — refactor into a shared `seed_lib.py` once we hit 5+.
+  - ✅ Mathematics — 48 packs G1-9 (`seed_caps_foundation.py`)
+  - ✅ English Home Language — 45 packs G1-9 (`seed_caps_english.py`)
+  - **Natural Sciences** — next. ~30 packs across G4-9 (no NatSci in Foundation Phase). Physical, life, earth + space. Sits naturally next to Maths.
+  - **Afrikaans First Additional Language** — ~30 packs G1-9. Pairs with the Afrikaans voice (Charles Onselen). Vocab, grammar, basic reading.
+  - **isiZulu First Additional Language** — ~30 packs G1-9. Waiting on native voice clone (Kenny's friend) for the voice side; text packs can ship independently.
+  - **Life Skills (G1-3) → Life Orientation (G7-9)** — ~25 packs. Health, safety, social, civic.
+  - **Social Sciences (History + Geography)** — ~35 packs G4-9 (two strands).
+  - **Economic & Management Sciences** — ~12 packs G7-9. Money, business basics.
+  - **Creative Arts** — ~12 packs G4-9. Visual, performance.
+  - **Total full-CAPS catalogue ≈ 220 packs.** Library UI already has phase + subject filter chips so this scales without UX pain.
+  - **Per-subject estimate:** ~3-4 hours of AI-generated content + human review per subject. ~2-3 days of focused work to ship the remaining 6 subjects end-to-end.
+  - After CAPS is complete, repeat the pattern for Common Core (US), GCSE (UK), IB, AusCurriculum — same script template, swap region + content. Each is its own multi-week effort.
+
 - **Multi-region curriculum library — pre-loaded starter packs.** This is a *promise made on the homepage FAQ* ("we're building starter packs for CAPS (SA), Common Core (US), GCSE/A-Levels (UK), IB, and the Australian Curriculum, one-click activate from the library"). The plumbing already exists — `curriculum_library` table, Library tile in study-hub, `/api/library/promote`, one-click activate flow. The gap is *content + curation*, not engineering. Scoping:
 
   **What "starter pack" should contain (per curriculum):**

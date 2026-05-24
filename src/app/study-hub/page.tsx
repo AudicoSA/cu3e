@@ -2041,6 +2041,7 @@ function LibrarySection({
   onActivate: (pack: LibraryPack) => void;
 }) {
   const [phase, setPhase] = useState<"all" | "foundation" | "intermediate" | "senior">("all");
+  const [subject, setSubject] = useState<string>("all");
 
   const phaseOf = (grade: string | null): "foundation" | "intermediate" | "senior" | "other" => {
     if (!grade) return "other";
@@ -2053,26 +2054,42 @@ function LibrarySection({
     return "other";
   };
 
-  const filtered = phase === "all"
-    ? library
-    : library.filter((p) => phaseOf(p.grade) === phase);
+  // Subject chips are derived from the library so they appear automatically as
+  // new subjects get seeded (English next, then Natural Sciences, languages, etc.).
+  const subjects = Array.from(new Set(library.map((p) => p.subject))).sort();
 
-  const chips: Array<{ key: typeof phase; label: string }> = [
-    { key: "all", label: `All (${library.length})` },
+  const filtered = library.filter((p) => {
+    if (phase !== "all" && phaseOf(p.grade) !== phase) return false;
+    if (subject !== "all" && p.subject !== subject) return false;
+    return true;
+  });
+
+  const phaseChips: Array<{ key: typeof phase; label: string }> = [
+    { key: "all", label: "All phases" },
     { key: "foundation", label: "Foundation · G1-3" },
     { key: "intermediate", label: "Intermediate · G4-6" },
     { key: "senior", label: "Senior · G7-9" },
   ];
 
+  // Short label so the chip row doesn't wrap awkwardly. "English Home
+  // Language" → "English", "Natural Sciences" stays as-is.
+  const shortSubject = (s: string) =>
+    s.replace(/ Home Language$/, "").replace(/ First Additional Language$/, " (FAL)");
+
   return (
     <div>
       <span className="eyebrow">From the library</span>
       <p style={{ marginTop: 8, fontSize: 11.5, color: "var(--ink-muted)", lineHeight: 1.5 }}>
-        One-click curriculum packs Echo can teach from.
+        One-click curriculum packs Echo can teach from.{" "}
+        <span style={{ color: "var(--ink-muted)" }}>
+          {filtered.length === library.length
+            ? `${library.length} packs.`
+            : `${filtered.length} of ${library.length} packs.`}
+        </span>
       </p>
 
       <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
-        {chips.map((c) => {
+        {phaseChips.map((c) => {
           const selected = phase === c.key;
           return (
             <button
@@ -2097,6 +2114,53 @@ function LibrarySection({
           );
         })}
       </div>
+
+      {subjects.length > 1 && (
+        <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
+          <button
+            type="button"
+            onClick={() => setSubject("all")}
+            style={{
+              padding: "4px 10px",
+              borderRadius: 999,
+              border: subject === "all" ? "1px solid var(--cyan)" : "1px solid var(--border)",
+              background: subject === "all" ? "rgba(78,216,235,0.12)" : "transparent",
+              color: subject === "all" ? "var(--cyan)" : "var(--ink-muted)",
+              fontSize: 10.5,
+              fontFamily: "var(--font-mono)",
+              letterSpacing: "0.04em",
+              cursor: "pointer",
+              transition: "background 150ms ease, border-color 150ms ease, color 150ms ease",
+            }}
+          >
+            All subjects
+          </button>
+          {subjects.map((s) => {
+            const selected = subject === s;
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSubject(s)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: selected ? "1px solid var(--cyan)" : "1px solid var(--border)",
+                  background: selected ? "rgba(78,216,235,0.12)" : "transparent",
+                  color: selected ? "var(--cyan)" : "var(--ink-muted)",
+                  fontSize: 10.5,
+                  fontFamily: "var(--font-mono)",
+                  letterSpacing: "0.04em",
+                  cursor: "pointer",
+                  transition: "background 150ms ease, border-color 150ms ease, color 150ms ease",
+                }}
+              >
+                {shortSubject(s)}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <ul style={{ marginTop: 12, listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
         {filtered.length === 0 ? (
