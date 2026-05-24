@@ -347,11 +347,22 @@ export default function StudyHub() {
 
       setActivatingId(pack.id);
       try {
+        // Single-active model: only ONE worksheet sits in Echo's context at a
+        // time, so each new activation deactivates whatever was active before.
+        // Keeps per-turn token cost flat regardless of how many packs the kid
+        // has ever activated. Catalogue can grow to thousands of packs without
+        // affecting a session's cost.
+        await supabase
+          .from("curriculum_documents")
+          .update({ is_active: false })
+          .eq("child_id", selectedChildId)
+          .eq("is_active", true);
+
         const filename = `${pack.region} · ${pack.grade ? pack.grade + " · " : ""}${pack.title}.pdf`;
-        // If the library pack ships with pre-extracted text (CAPS Foundation
-        // Phase pack and similar), copy it straight to the document row so
-        // Echo can discuss it the instant the parent activates — no
-        // Claude vision call, no 10-30s "extracting…" wait, no extra cost.
+        // If the library pack ships with pre-extracted text (CAPS packs and
+        // similar), copy it straight to the document row so Echo can discuss
+        // it the instant the parent activates — no Claude vision call, no
+        // 10-30s "extracting…" wait, no extra cost.
         const { error: insErr } = await supabase.from("curriculum_documents").insert({
           child_id: selectedChildId,
           filename,
@@ -708,6 +719,14 @@ export default function StudyHub() {
         .from("curriculum")
         .upload(fileName, file, { contentType: file.type });
       if (uploadError) throw uploadError;
+
+      // Single-active: deactivate the prior worksheet before this new one
+      // becomes Echo's current focus.
+      await supabase
+        .from("curriculum_documents")
+        .update({ is_active: false })
+        .eq("child_id", selectedChildId)
+        .eq("is_active", true);
 
       const { data: inserted, error: dbError } = await supabase
         .from("curriculum_documents")
@@ -1955,11 +1974,14 @@ function Sidebar({
       `}</style>
 
       <div>
-        <span className="eyebrow">Active documents</span>
-        <ul style={{ marginTop: 12, listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
+        <span className="eyebrow">Current worksheet</span>
+        <p style={{ marginTop: 6, fontSize: 11, color: "var(--ink-muted)", lineHeight: 1.45 }}>
+          Echo focuses on ONE worksheet at a time. Activating a new one swaps it in.
+        </p>
+        <ul style={{ marginTop: 10, listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: 8 }}>
           {documents.length === 0 ? (
             <li style={{ fontSize: 12, color: "var(--ink-muted)", fontStyle: "italic" }}>
-              Nothing active yet.
+              Nothing active yet — upload one or pick from the library.
             </li>
           ) : (
             documents.map((doc) => (
@@ -2116,49 +2138,35 @@ function LibrarySection({
       </div>
 
       {subjects.length > 1 && (
-        <div style={{ marginTop: 6, display: "flex", flexWrap: "wrap", gap: 6 }}>
-          <button
-            type="button"
-            onClick={() => setSubject("all")}
+        <div style={{ marginTop: 8 }}>
+          <select
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
             style={{
-              padding: "4px 10px",
-              borderRadius: 999,
-              border: subject === "all" ? "1px solid var(--cyan)" : "1px solid var(--border)",
-              background: subject === "all" ? "rgba(78,216,235,0.12)" : "transparent",
-              color: subject === "all" ? "var(--cyan)" : "var(--ink-muted)",
-              fontSize: 10.5,
-              fontFamily: "var(--font-mono)",
-              letterSpacing: "0.04em",
+              width: "100%",
+              padding: "8px 10px",
+              borderRadius: 8,
+              border: "1px solid var(--border-strong)",
+              background: "var(--bg-elev)",
+              color: "var(--ink)",
+              fontSize: 12.5,
+              fontFamily: "var(--font-sans)",
               cursor: "pointer",
-              transition: "background 150ms ease, border-color 150ms ease, color 150ms ease",
+              appearance: "none",
+              backgroundImage:
+                "url(\"data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236f7480' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e\")",
+              backgroundRepeat: "no-repeat",
+              backgroundPosition: "right 10px center",
+              paddingRight: 28,
             }}
           >
-            All subjects
-          </button>
-          {subjects.map((s) => {
-            const selected = subject === s;
-            return (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setSubject(s)}
-                style={{
-                  padding: "4px 10px",
-                  borderRadius: 999,
-                  border: selected ? "1px solid var(--cyan)" : "1px solid var(--border)",
-                  background: selected ? "rgba(78,216,235,0.12)" : "transparent",
-                  color: selected ? "var(--cyan)" : "var(--ink-muted)",
-                  fontSize: 10.5,
-                  fontFamily: "var(--font-mono)",
-                  letterSpacing: "0.04em",
-                  cursor: "pointer",
-                  transition: "background 150ms ease, border-color 150ms ease, color 150ms ease",
-                }}
-              >
+            <option value="all">All subjects</option>
+            {subjects.map((s) => (
+              <option key={s} value={s}>
                 {shortSubject(s)}
-              </button>
-            );
-          })}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 
