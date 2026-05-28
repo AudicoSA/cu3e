@@ -113,6 +113,71 @@ Mostly shipped, two open items:
 
 ---
 
+## Phase 2 — Locked-down Android tablet stack (rental market)
+
+**Strategic gate:** start once CU3E concept is validated with paying web users (the "concept works → go to market" line at the top of this doc). Until then this is shelf-ready, not in-flight.
+
+**Why it matters:** the PWA serves middle-class families with their own iPad / laptop. The locked-tablet rental unlocks tens of millions of SA people who can't drop R5000 on hardware but could swing ~R150-450/month for a complete bundle (device + data + CU3E + replacement reserve). It's also a hardware moat — kids form a relationship with the physical thing — and opens distribution angles the pure web app can't reach (NGOs, mining-co education benefits, government tablet rollouts, kiosk sign-up at pharmacies / spaza shops).
+
+**Why it's tractable:** CU3E is already a PWA. The "app" is just a 2 MB WebView wrapper around `cu3e.co.za/study-hub`. Every Vercel deploy reaches every tablet instantly — no Play Store reviews, no version skew, no update friction. Most of the work is the Android shell, not re-implementing the product.
+
+### MVP component checklist (~7-10 days focused work)
+
+- [ ] **APK wrapper** — Android WebView, fullscreen, no Chrome chrome. Opens the live PWA URL. ~1 day.
+- [ ] **Kiosk lockdown** — Android Lock Task Mode (official since Android 5). Tablet locked to CU3E only: no notification shade, no home button, no recents, no quick settings, no Play Store. Survives reboot. Requires being set as device owner via ADB on first boot (`dpm set-device-owner`). ~1-2 days.
+- [ ] **Boot replacement** — replace the home launcher so the tablet boots straight into CU3E. ~1 day.
+- [ ] **Hardware controls** — volume keys, sleep button, rotation lock, brightness — kid-safe defaults. ~1 day.
+- [ ] **Parent unlock** — pin code (or QR code generated from parent dashboard) escapes kiosk for setup, troubleshooting, factory reset. ~1 day.
+- [ ] **Provisioning script** — Bash + ADB setup script + QR-code provisioning (Android 7+). Factory-fresh tablet → fully locked + linked to a parent account in ~2 minutes. Essential at fleet scale. ~1 day.
+- [ ] **Phone-home heartbeat** — tablet pings a CU3E endpoint every 24h with battery / data-used / last-seen / child active. Lets us notice broken devices, theft, dormant accounts. ~half day.
+
+### Hardening (extra 2-3 weeks before real fleet use)
+
+- [ ] OTA firmware updates (we control the APK; security patches need a path)
+- [ ] Offline mode (load-shedding reality — Echo + activated worksheets cached locally for ~30 min of use without connectivity)
+- [ ] Theft / unpaid-rental kill switch (server-side disable)
+- [ ] Multi-child profile switching on the device (one tablet → 2 siblings)
+- [ ] Hardware QC checklist + supplier vetting (cheap tablets break a LOT — touch dead zones, charge port failures, microphone defects are common)
+- [ ] Customer-support workflow (broken tablet → return → replace)
+
+### Rough unit economics to test
+
+- Doogee G5 (or similar Android 11+ tablet): ~R1500 retail
+- Cellular data: R50-150/month (voice mode is bandwidth-heavy — needs measuring)
+- CU3E subscription: R250/month (current target)
+- Logistics + replacement reserve: ~R100/month
+
+**Pricing options to A/B:**
+- All-in monthly: **~R450/month** — device, data, subscription, replacement covered
+- Subsidised: **R150/month + R299 once-off device fee** spread over 24 months — Vodacom Smart Kicka model
+
+### Distribution angles this unlocks
+
+- Direct-to-parent rental (online + WhatsApp sign-up)
+- Spaza shops / pharmacies as kiosk-style sign-up points
+- NGO partnerships (literacy / kids' charities)
+- Mining-company education benefits (Anglo, Sasol, Implats already fund employee kids' education)
+- Department of Basic Education tablet rollouts (historically badly executed — opening for a better product)
+- Faith communities (a lot of SA parents trust church / mosque / temple as a delivery channel for kid services)
+
+### Pre-launch unknowns to validate
+
+- Real-world data usage per kid per month (voice mode is the unknown — we don't have telemetry on EL session bandwidth yet)
+- Tablet breakage rate at the R1500 hardware tier (probably 5-15% per year)
+- Willingness-to-pay at R150 / R250 / R450 price points (run a survey before building inventory)
+- Whether the SIM-card insertion + APN setup workflow can be made parent-proof
+- Whether SA cell networks treat WebSocket-heavy voice traffic well on prepaid bundles
+
+### Reference products to study before building
+
+- Amazon Kids Fire (locked tablet model done well)
+- Vodacom Smart Kicka (SA subsidised-device precedent)
+- Kano (UK, kid-targeted locked device)
+- Project pi / RACHEL (offline education hardware in low-connectivity contexts)
+- One Laptop Per Child (the cautionary tale — what went wrong logistically)
+
+---
+
 ## Tech debt / paper cuts
 
 - **`createServerClient` cookie API deprecation** — Supabase SSR is warning the old `cookies.get()` signature is deprecated. Migrate to `getAll`/`setAll`.
