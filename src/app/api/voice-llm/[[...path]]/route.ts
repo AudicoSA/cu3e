@@ -128,7 +128,41 @@ export async function POST(req: Request) {
     }
   }
 
-  console.log('[voice-llm]', JSON.stringify({ child_id: childId, trace }));
+  // PHANTOM-SILENCE FILTER. ElevenLabs sometimes forwards a turn whose user
+  // content is just "..." or empty — typically because its VAD/transcriber
+  // produced no actual words but EL still wanted a turn. The system prompt
+  // tells Echo to stay quiet during silence, but EL keeps inviting a response,
+  // so Echo ends up firing "still there?" every couple of seconds.
+  //
+  // Skip the LLM call entirely on those turns and return an empty SSE stream
+  // in OpenAI's exact format so EL accepts the response and just stays
+  // quiet. Echo says nothing; the kid keeps thinking.
+  const lastUserMsg = [...incoming].reverse().find((m) => m.role === 'user');
+  const isPhantomSilence = (() => {
+    if (!lastUserMsg) return false;
+    const raw = (lastUserMsg.content ?? '').trim();
+    if (!raw) return true;
+    // Strip dots, ellipses, whitespace, common silence placeholders.
+    const stripped = raw.replace(/[.…\s]/g, '');
+    return stripped.length === 0;
+  })();
+
+  console.log('[voice-llm]', JSON.stringify({ child_id: childId, trace, phantom_silence: isPhantomSilence }));
+
+  if (isPhantomSilence) {
+    const empty =
+      `data: {"id":"silent","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":""}}]}\n\n` +
+      `data: {"id":"silent","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\n` +
+      `data: [DONE]\n\n`;
+    return new Response(empty, {
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      },
+    });
+  }
 
   const systemPrompt = buildVoiceSystemPrompt(child, curriculumTexts);
   const outgoingMessages: IncomingMessage[] = [

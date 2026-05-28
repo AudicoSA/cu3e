@@ -109,49 +109,51 @@ export async function POST(req: Request) {
         })
       );
 
-      if (haveRecent || (brief && brief.trim().length > 0)) {
-        const transcript = (recentMsgs ?? [])
-          .slice()
-          .reverse()
-          .map((r) => {
-            const who = r.role === 'user' ? childName : 'Echo';
-            const tag = r.mode && r.mode !== 'tutor' ? ` [${r.mode}]` : '';
-            return `${who}${tag}: ${String(r.content).replace(/\s+/g, ' ').slice(0, 180)}`;
-          })
-          .join('\n');
+      // Opener policy as of Ella-exam-prep feedback (2026-05-27):
+      // ALWAYS open generic + fresh. Do not reference yesterday's topic,
+      // do not reference what they were "in the middle of", do not pull
+      // anything specific from memory_brief into the spoken line. The
+      // kid sets the agenda — Echo just opens the door.
+      //
+      // Reason: when Ella sat down to study for exams, Echo opened with
+      // "we left off on AI ethics, want to dig back in or pivot to
+      // fractions?" — that combination of stale context + binary choice
+      // made her give up and use ChatGPT instead. Background memory
+      // still informs Echo's RESPONSES (in voice-llm), it just doesn't
+      // leak into the opener.
+      //
+      // hoursSinceLast is kept in logs so we can observe behaviour
+      // shifts; it no longer branches the prompt.
+      void hoursSinceLast;
+      void isFreshDay;
+      void lastBriefLines;
 
+      if (haveRecent || (brief && brief.trim().length > 0)) {
         const langName = buildLanguageHint(langCode);
         const synthPrompt = `You are crafting the OPENING LINE that voice-Echo will speak the moment ${childName} starts a chat.
 
-Hours since their last chat: ${hoursSinceLast === null ? 'never chatted before' : `${hoursSinceLast.toFixed(1)} hours`}.
-
 LANGUAGE: write the line in ${langName}.${langCode !== 'en' ? ` Natural, age-appropriate ${langName} — not stilted textbook ${langName}.` : ''}
 
-${isFreshDay
-  ? `IT'S A NEW DAY (>12 hours since last chat). Do NOT bring up specific topics from yesterday — ${childName} may have moved on, and starting a fresh session shouldn't feel like Echo is still stuck on what happened before. Open generically and warmly, inviting ${childName} to set the agenda. Light, no pressure.`
-  : `IT'S A CONTINUATION (within ~12 hours of the last chat). Pick up from where things left off — reference the specific topic, question, or stuck point. Make ${childName} feel REMEMBERED.`}
+The opener is GENERIC + FRESH. Do NOT bring up specific topics from any previous chat. Do NOT reference what ${childName} was working on, stuck on, or interrupted on. Do NOT say "last time" or "we were doing" or "ready to pick that up". ${childName} sets the agenda — your job is to open the door warmly and step out of the way.
 
 Constraints:
-- ONE warm spoken sentence, max 22 words.
+- ONE warm spoken sentence, max 18 words.
 - ${ageBand === 'little' ? 'Match a 6-9 year-old tone: simple, warm, a touch playful.' : 'Match a 10+ tone: smart-older-friend, direct, not gushy.'}
-- End by inviting them in — but only ONE question.
-- No quotes, no preamble.
+- End with at most ONE light question that hands control to ${childName}.
+- No quotes, no preamble, no emoji.
 
-${isFreshDay
-  ? `Examples of GOOD fresh-day openers:
-    - "Hey ${childName} — what's on your mind today?"
-    - "Morning ${childName}, what are we doing?"
-    - "Hey ${childName}, ready for something new?"
-   Do NOT say "last time" or reference any past topic in a fresh-day opener.`
-  : `Examples of GOOD continuation openers:
-    - "Hey ${childName} — last time we were stuck on adding fractions. Want to keep going?"
-    - "Back already? Pick up the dragon story, or something different?"`}
+Examples of GOOD openers (this is the entire style range):
+- "Hey ${childName} — what's on your mind?"
+- "Hey ${childName}, what shall we get into?"
+- "Morning ${childName}, what's the plan?"
+- "Hi ${childName} — over to you."
+- "Hey ${childName}, ready when you are."
 
-RECENT CHATS (most recent first to last):
-${transcript || '(none)'}
-
-MEMORY BRIEF (running summary):
-${lastBriefLines || '(none)'}
+BANNED (do NOT produce anything resembling these):
+- "Hey ${childName} — last time we were doing X..."
+- "Want to keep going with the fractions / story / topic?"
+- "Ready to dig back in or switch?"
+- Any reference to specific homework topics, names, places, or themes from a previous chat.
 
 Output: just the spoken line.`;
 

@@ -85,26 +85,34 @@ export async function refreshChildMemory(args: {
     })
     .join('\n');
 
-  const prompt = `You are building a small private "memory brief" that ${childName}'s AI tutor Echo will read at the start of every future conversation. Think of it as: what would a good tutor remember about this kid?
+  const prompt = `You are building a small private "memory brief" that ${childName}'s AI tutor Echo will read silently before every future conversation. Think of it as background context — what a thoughtful tutor would QUIETLY KNOW about this kid before walking into the room.
 
-Format the brief as 4-7 short bullets, in this exact priority order:
+CRITICAL: this brief is OBSERVATIONS, not instructions. It tells Echo who ${childName} IS, not what to do next. Echo will use it to understand ${childName}, then let ${childName} drive the conversation fresh each time.
 
-1. FIRST bullet — the most recent conversation. What did ${childName} and Echo just talk about? Was it interrupted? Did they leave anything mid-thought? Frame it so Echo can pick up naturally next time. Example: "Last chat was about ponies — Tatum was picking names for two of them when the call cut out." Always include this bullet if there were chats today or yesterday.
+Write 3-6 short bullets covering (in priority order, skip categories with nothing notable):
 
-2. Next bullets — what topics or subjects ${childName} is currently working through (homework, curriculum, recurring threads).
+1. Subjects + topics ${childName} has been working through (homework, curriculum, recurring threads). E.g. "Working through Grade 7 fractions — simplifying + finding GCD."
 
-3. Anything specific they got stuck on, or had a breakthrough on.
+2. Specific sticking points + breakthroughs. E.g. "Got 18/24 → 9/12 → 3/4 cleanly last week. Stalls when she can't see the worksheet itself — needs problems read aloud."
 
-4. Their interests, in-jokes, or recurring themes.
+3. Interests, in-jokes, recurring themes. E.g. "Curious about AI limits + ethics. Riffs creatively — invented 'speed bump' as a synonym for obstacle."
 
-5. Their style: chatty, brief, persistent, easily-distracted, etc.
+4. Style: chatty, brief, persistent, easily-distracted, etc. E.g. "Communicative but easily distracted. Goes quiet when overwhelmed."
+
+EXPLICITLY DO NOT WRITE:
+- "Ready to pick that thread back up..."
+- "Last chat was about X — could resume there..."
+- "Was working on Y when interrupted — circle back..."
+- Anything that reads as a NEXT-STEP suggestion or call-to-action for Echo.
+
+The reason: Echo has been opening every session by referencing yesterday's topic, which makes kids feel hounded. ${childName} should be free to open every session FRESH. The brief teaches Echo who ${childName} is; ${childName} decides what they want to work on right now.
 
 Rules:
 - Refer to ${childName} by name, never "the child" or "the kid".
 - Each bullet under 22 words.
-- Skip anything generic. If nothing notable in a category, write fewer bullets.
-- No quotes from the transcript.
-- This is for Echo's memory only — write it AS IF Echo wrote it for itself.
+- No transcript quotes.
+- Past-tense observations and present-tense traits only. NEVER future-tense "will pick up" or "is ready to" framing.
+- Write it AS IF Echo wrote it for itself.
 - No preamble, no headings, no markdown.
 
 CHATS (last 30 days; the most recent ones matter most):
