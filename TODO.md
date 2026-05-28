@@ -12,7 +12,10 @@ Single-page snapshot. Grouped by *when*, not by feature area.
 - Attach `cu3e.co.za` to Vercel + update DNS (currently a parked-domain page on Apache; testing happens on `cu3e-hazel.vercel.app`). Whenever Kenny wants to flip the public URL.
 
 **Gated on "concept works → go to market":**
-- **Unbundle ElevenLabs Conversational AI → direct TTS + Web Speech STT + our LLM.** Drops EL voice cost from ~$0.08/min session to ~10-20¢ per 5-min chat (~80-90% reduction). Same Echo voice (we already use EL TTS standalone for the weekly overview). ~1 day of focused work. Don't ship until subscription cost actually starts to matter.
+- **Unbundle ElevenLabs Conversational AI → direct TTS + Web Speech STT + our LLM.** TWO independent reasons to ship this, either alone makes it worth doing:
+  1. **Cost.** Drops EL voice cost from ~$0.08/min session to ~10-20¢ per 5-min chat (~80-90% reduction). Same Echo voice (we already use EL TTS standalone for the weekly overview).
+  2. **Bandwidth — this is a Phase 2 (Android tablet rental) GATE, not a nice-to-have.** Current EL Conversational AI holds an open WebSocket with continuous ~50-100 kbps audio both ways. Works on good 3G, glitches on marginal 3G, dies on Edge / 2G. With unbundling: per turn is ~55 KB (5 KB text + 50 KB TTS audio response), works on the same connection that already handles text chat. Without this change, a heavy kid on Phase 2 burns ~750 MB-2 GB/month of cellular data on voice alone — blows the R450 rental price model. With it: under R300/month total data even for heavy use.
+  - ~1 day of focused work. Ship before Phase 2 fleet pilot, or alongside it.
 
 ---
 
@@ -134,7 +137,9 @@ Mostly shipped, two open items:
 ### Hardening (extra 2-3 weeks before real fleet use)
 
 - [ ] OTA firmware updates (we control the APK; security patches need a path)
-- [ ] Offline mode (load-shedding reality — Echo + activated worksheets cached locally for ~30 min of use without connectivity)
+- [ ] **Offline mode + cache** — load-shedding + flaky-3G reality. Activated worksheet + extracted_text + last memory brief stored locally so a mid-session dropout doesn't lose context. Chat messages queue + sync when back online. Voice mode falls back gracefully to text when offline.
+- [ ] **Network-aware degradation** — read `navigator.connection.effectiveType` + `saveData`. On 2G / Edge / save-data: disable voice mode entirely, force text-only, hide image-generation buttons, show small "low-data mode" banner so the parent understands why. On good 3G+: full experience.
+- [ ] **Data-usage telemetry per session** — we don't yet know real bandwidth per kid (voice mode is the unknown). Phone-home heartbeat should report MB used / sessions today so we can calibrate the rental data bundle correctly before scaling.
 - [ ] Theft / unpaid-rental kill switch (server-side disable)
 - [ ] Multi-child profile switching on the device (one tablet → 2 siblings)
 - [ ] Hardware QC checklist + supplier vetting (cheap tablets break a LOT — touch dead zones, charge port failures, microphone defects are common)
@@ -143,9 +148,19 @@ Mostly shipped, two open items:
 ### Rough unit economics to test
 
 - Doogee G5 (or similar Android 11+ tablet): ~R1500 retail
-- Cellular data: R50-150/month (voice mode is bandwidth-heavy — needs measuring)
+- Cellular data: see table below — depends entirely on whether EL unbundling has shipped
 - CU3E subscription: R250/month (current target)
 - Logistics + replacement reserve: ~R100/month
+
+**Data cost reality (SA Vodacom prepaid pricing, AFTER EL unbundling):**
+
+| Usage | Voice/month | Misc app | Total | Bundle cost |
+|---|---|---|---|---|
+| Light kid (30 min/day) | ~50 MB | ~500 MB | ~550 MB | ~R49 |
+| Heavy kid (2 hr/day) | ~250 MB | ~1 GB | ~1.25 GB | ~R99 |
+| Family of 3 (heavy) | ~750 MB | ~2 GB | ~2.75 GB | ~R199-299 |
+
+**WITHOUT EL unbundling**, voice alone is 5-10× these numbers — heavy use blows past R1500/month in data, which kills the rental price model entirely. That's why EL unbundling is listed as a Phase 2 gate at the top of this doc, not just a cost optimisation.
 
 **Pricing options to A/B:**
 - All-in monthly: **~R450/month** — device, data, subscription, replacement covered
