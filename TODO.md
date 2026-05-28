@@ -87,10 +87,27 @@ Mostly shipped, two open items:
   - **UI itself stays in English** for MVP. Chat surface labels, buttons, mode names — all English. Echo's *output* is the Afrikaans/Zulu piece. Full UI i18n (next-intl) is the Phase 2 polish.
 
 - **Native-voice TTS for Afrikaans + isiZulu** (real follow-up to the multilingual ship). Kenny tested Adele on Afrikaans → bad pronunciation. Investigation: **EL's public voice library has zero voices fine-tuned natively for Afrikaans or isiZulu**. The "South African" voices (Adele zx7xpccUD1nCkqUuxIGc, Thandi BcpjRWrYhDBHmOnetmBl, Charles Onselen IT5cb4lfodSX8eyXUzyO) are all listed as "Languages: en (south african)" — SA-accented *English* speakers. Feeding them non-English text → English-phoneme mispronunciation. Currently `lib/languages.ts` has `voiceId: null` for af/zu so we fall back to the agent's default voice (also English-trained — same problem, but at least it's the consistent Echo voice).
-  - **Real options, ranked:**
-    1. **Voice-clone a native speaker** (best long-term). Kenny records ~5 min of clean audio from a native Afrikaans speaker + native isiZulu speaker (Kenny's friend speaks Zulu — perfect candidate), uses EL's voice cloning to create custom voices, plugs the new voice IDs into `lib/languages.ts`. Authentic pronunciation, owned by Kenny's workspace.
-    2. **Use Google TTS for non-English voices**. Google's Cloud TTS has native af-ZA and zu-ZA voices. Means routing TTS through Google for non-English sessions — more architectural work but high quality immediately.
-    3. **Accept the limitation for now**. Text chat in Afrikaans/isiZulu works (LLM writes correctly). Voice mode stays English-only until cloning is done.
+  - **Decision: voice-clone via paid native speakers (Fiverr).** Scraping online narratives is a non-starter — ElevenLabs ToS requires rights to the voice, and a person's voice is a personality right in SA. The cheapest, fastest, legally clean path is hire-a-narrator. Total ~R1000, ~1 day from gig post to live voices.
+  - **Concrete plan:**
+    1. **Post 2 Fiverr gigs** (or 1 if a SA voice actor speaks both): one Afrikaans, one isiZulu native speaker.
+       - **Brief:** "Record ~5 minutes of clean studio audio in [language] reading the provided children's tutoring script. Deliver as 48kHz mono WAV, no music, no edits. **Full commercial rights transfer** for use in our education app (specify this in writing). Budget R200-500 per language."
+       - Search terms: "Afrikaans voice over", "Zulu voice over", "South African voice actor". Fivver SA-based actors typically deliver in 1-3 days.
+    2. **Recording script** (we provide — should give EL the phonetic coverage it needs to clone well). Cover:
+       - Greetings + small talk (warm, conversational range)
+       - Counting numbers 1-20 + days of the week (everyday vocab)
+       - A short kids' story paragraph (narrative tone)
+       - A few teacherly explanations ("So, when we add three and four together...") (pedagogical tone)
+       - Some quiet/calm sentences ("Take your time. That's a good question.") (study-mode tone — important now that Echo is calm-energy)
+    3. **Once WAVs arrive:**
+       - Upload to EL Voice Lab → Professional Voice Clone (paid tier) for each
+       - Test the clones with sample sentences from each tone register
+       - Update `src/lib/languages.ts` voiceId for `af` and `zu`
+       - Test end-to-end on /study-hub with a child set to that language
+       - Re-enable `agent.language` override in VoiceTalk.tsx once the EL agent has language_presets registered (currently disabled — see "Also discovered" note below)
+  - **Fallback options if Fiverr doesn't work out:**
+    - **Kenny's friend records for free** (still the cleanest option for isiZulu — a friend who consents is identical legally to a paid actor)
+    - **Google Cloud TTS** for non-English voices — production-grade native af-ZA + zu-ZA. ~1 day of engineering to route non-English sessions through Google instead of EL. Downside: not the same Echo voice across languages.
+    - **Open-source TTS (Meta MMS-TTS-zul / MMS-TTS-afr)** — free, self-host, lower quality. Last-resort.
   - **Also discovered during testing:** EL agent's `platform_settings.overrides.conversation_config_override` had both `tts.voice_id: false` and `agent.language: false` from the original config — meaning **all voice overrides have been silently rejected, including the mature voice for 10+ shipped earlier**. PATCHed to `true` for both via direct API call. Mature voice (`ELEVENLABS_VOICE_ID_MATURE` env) should now actually take effect when set.
   - **Also discovered:** EL requires the agent's `language_presets` to include `'af'`/`'zu'` BEFORE accepting `overrides.agent.language` at session-start. Direct PATCH attempts to add these silently failed (possibly UI-only or premium-tier). Currently the agent.language override is disabled in `VoiceTalk.tsx` — so EL's STT defaults to English mode for Afrikaans/Zulu sessions. STT quality on non-English speech will degrade. Re-enable when the agent has proper language presets registered.
 
