@@ -1,0 +1,20 @@
+{
+  "name": "cu3e-live-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WebSocket relay between the CU3E study-hub and Gemini 3.8 Live (with Live Avatar).",
+  "type": "module",
+  "main": "server.mjs",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "spike": "node --env-file-if-exists=.env spike.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@google/genai": "^2.24.0",
+    "ws": "^8.18.0"
+  }
+}

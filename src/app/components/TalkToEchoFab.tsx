@@ -10,13 +10,48 @@
 
 type Props = {
   onPress: () => void;
+  // Optional second button: Face-to-Face with Echo (Gemini Live Avatar).
+  onFacePress?: () => void;
   disabled?: boolean;
   hidden?: boolean;
 };
 
-export default function TalkToEchoFab({ onPress, disabled, hidden }: Props) {
+export default function TalkToEchoFab({ onPress, onFacePress, disabled, hidden }: Props) {
   if (hidden) return null;
   return (
+    <>
+    {onFacePress && (
+      <button
+        type="button"
+        onClick={onFacePress}
+        disabled={disabled}
+        aria-label="See Echo face to face"
+        title="Face-to-face with Echo"
+        style={{
+          position: "fixed",
+          right: 26,
+          bottom: 96,
+          zIndex: 50,
+          width: 52,
+          height: 52,
+          borderRadius: 999,
+          border: "1px solid rgba(94, 234, 212, 0.55)",
+          background: "radial-gradient(circle at 30% 30%, #2dd4bf 0%, #0f766e 70%)",
+          color: "#fff",
+          cursor: disabled ? "not-allowed" : "pointer",
+          opacity: disabled ? 0.4 : 1,
+          boxShadow: "0 8px 22px rgba(45, 212, 191, 0.35), 0 2px 6px rgba(0, 0, 0, 0.3)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M23 7l-7 5 7 5V7z" />
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+        </svg>
+      </button>
+    )}
     <button
       type="button"
       onClick={onPress}
@@ -94,5 +129,6 @@ export default function TalkToEchoFab({ onPress, disabled, hidden }: Props) {
         }
       `}</style>
     </button>
+    </>
   );
 }

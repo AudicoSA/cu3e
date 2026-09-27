@@ -3,16 +3,21 @@
 import Image from "next/image";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
 import VoiceTalk from "../components/VoiceTalk";
+import AvatarTalk, { avatarSupported } from "../components/AvatarTalk";
+
 import TalkToEchoFab from "../components/TalkToEchoFab";
 import Screensaver from "../components/Screensaver";
 import CameraCapture from "../components/CameraCapture";
 import { useVoiceAugment } from "@/hooks/useVoiceAugment";
 import { useWakeWord } from "@/hooks/useWakeWord";
 import { useWakeLock } from "@/hooks/useWakeLock";
+
+// Feature support never changes during a page's life, so nothing to subscribe to.
+const noopSubscribe = () => () => {};
 
 type Child = {
   id: string;
@@ -520,6 +525,14 @@ export default function StudyHub() {
 
   const [input, setInput] = useState("");
   const [voiceOpen, setVoiceOpen] = useState(false);
+  // Face-to-Face with Echo (Gemini Live Avatar). Offered only when the live
+  // relay is configured and the browser can play fragmented MP4.
+  const [avatarOpen, setAvatarOpen] = useState(false);
+  const canAvatar = useSyncExternalStore(
+    noopSubscribe,
+    avatarSupported,
+    () => false
+  );
   const [cameraOpen, setCameraOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isLoading = status === "submitted" || status === "streaming";
@@ -557,7 +570,7 @@ export default function StudyHub() {
   }, []);
 
   useWakeWord({
-    enabled: wakeWordEnabled && !voiceOpen,
+    enabled: wakeWordEnabled && !voiceOpen && !avatarOpen,
     keyword: "echo",
     onWake: onWakeWord,
   });
@@ -933,6 +946,13 @@ export default function StudyHub() {
         childId={selectedChildId}
       />
 
+      <AvatarTalk
+        open={avatarOpen}
+        onClose={() => setAvatarOpen(false)}
+        childId={selectedChildId}
+        mode={mode}
+      />
+
       <ShareModal
         doc={shareDoc}
         onClose={() => setShareDoc(null)}
@@ -943,8 +963,9 @@ export default function StudyHub() {
           existing header button gets pushed out of view mid-session. */}
       <TalkToEchoFab
         onPress={() => setVoiceOpen(true)}
+        onFacePress={canAvatar ? () => setAvatarOpen(true) : undefined}
         disabled={!selectedChildId}
-        hidden={voiceOpen || screensaverActive}
+        hidden={voiceOpen || avatarOpen || screensaverActive}
       />
 
       {/* Bedside-companion screensaver. Idle-triggered, exits on tap or
@@ -953,7 +974,7 @@ export default function StudyHub() {
         enabled={!!selectedChildId}
         active={screensaverActive}
         onActiveChange={setScreensaverActive}
-        busy={isLoading || voiceOpen || cameraOpen}
+        busy={isLoading || voiceOpen || avatarOpen || cameraOpen}
         wakeWordArmed={wakeWordEnabled}
       />
 
