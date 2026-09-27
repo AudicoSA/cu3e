@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { createBrowserClient } from "@supabase/ssr";
 import VoiceTalk from "../components/VoiceTalk";
 import AvatarTalk, { avatarSupported } from "../components/AvatarTalk";
+import ChatMarkdown from "../components/ChatMarkdown";
 
 import TalkToEchoFab from "../components/TalkToEchoFab";
 import Screensaver from "../components/Screensaver";
@@ -101,6 +102,22 @@ const READING_INTRO = {
     "I need to practise reading aloud",
   ],
 };
+
+// Tutor intro for 10+. The kid version above leads with a counting game and
+// "not hand over the answer" — to a teen who's behind, that reads as "this
+// won't help me". This one leads with what they actually come for.
+type Starter = { label: string; hint?: string; action: "camera" | "send" | "fill"; text?: string };
+const OLDER_TUTOR_INTRO = {
+  title: "What are we sorting out?",
+  body: "Snap your homework, paste a question, or tell me what your test is on. I'll explain it step by step until it clicks.",
+};
+const OLDER_TUTOR_STARTERS: Starter[] = [
+  { label: "Snap my homework", hint: "Take a photo — Echo reads it", action: "camera" },
+  { label: "I've got a test coming up", hint: "Find the gaps, practise, get marked", action: "send", text: "I've got a test coming up. Can you help me get ready for it?" },
+  { label: "Explain something from class", hint: "Plain words + a worked example", action: "fill", text: "Can you explain " },
+  { label: "Check my answer", hint: "Paste your working — get it marked", action: "fill", text: "Can you check my answer? Here's the question and what I got:\n" },
+  { label: "Quiz me", hint: "Quick-fire questions on any subject", action: "send", text: "Quiz me! Ask me which subject and topic first." },
+];
 
 const INTROS: Record<Mode, typeof TUTOR_INTRO> = {
   tutor: TUTOR_INTRO,
@@ -535,6 +552,7 @@ export default function StudyHub() {
   );
   const [cameraOpen, setCameraOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const isLoading = status === "submitted" || status === "streaming";
 
   // ---------------------------------------------------------------------
@@ -581,8 +599,13 @@ export default function StudyHub() {
   // navigation away.
   useWakeLock(!!selectedChildId);
 
+  // Keep the newest message in view by scrolling the chat pane itself.
+  // (scrollIntoView also scrolled the whole page, which made the hub jump
+  // down on load and yank around while Echo was typing.)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = messagesEndRef.current?.parentElement;
+    if (!el || messages.length === 0) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages, sceneImages]);
 
   // Refetch the in-chat progress bar whenever Echo finishes a reply in
@@ -599,6 +622,10 @@ export default function StudyHub() {
   }, [isLoading, mode, messages.length, fetchProgress]);
 
   const selectedChild = children.find((c) => c.id === selectedChildId) ?? null;
+  // 10+ get the older-kid study hub: teen copy, test-prep starters, no counting games.
+  // Matches the server's ageBand(): unknown age is treated as 10+.
+  const isOlder = selectedChild ? (typeof selectedChild.age === "number" ? selectedChild.age >= 10 : true) : false;
+  const chatting = messages.length > 0;
 
   // Storybook image gen
   useEffect(() => {
@@ -660,13 +687,69 @@ export default function StudyHub() {
   }, [messages, status, mode]);
 
   const send = useCallback(
-    (text: string) => {
-      if (!text.trim() || isLoading || !selectedChildId) return;
+    (text: string): boolean => {
+      if (!text.trim() || isLoading || !selectedChildId) return false;
       sendMessage({ text });
       setInput("");
+      if (inputRef.current) inputRef.current.style.height = "auto";
+      return true;
     },
     [isLoading, selectedChildId, sendMessage]
   );
+
+  // Older-kid starters: open the camera, send a message, or pre-fill the box
+  // so they can finish the sentence ("Can you explain …").
+  const autoAskAfterUploadRef = useRef(false);
+  const capturedRef = useRef(false);
+  const showOlderTutor = mode === "tutor" && isOlder;
+  const runStarter = useCallback(
+    (st: Starter) => {
+      if (st.action === "camera") {
+        autoAskAfterUploadRef.current = true;
+        setCameraOpen(true);
+        return;
+      }
+      if (st.action === "send" && st.text) {
+        send(st.text);
+        return;
+      }
+      if (st.action === "fill" && st.text) {
+        setInput(st.text);
+        window.setTimeout(() => {
+          const el = inputRef.current;
+          if (!el) return;
+          el.focus();
+          el.setSelectionRange(el.value.length, el.value.length);
+          el.style.height = "auto";
+          el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+        }, 0);
+      }
+    },
+    [send]
+  );
+
+  const askAboutUpload = useCallback((): boolean => {
+    if (!uploadFilename) return false;
+    if (mode !== "tutor") setMode("tutor");
+    const isPhoto = /\.(jpe?g|png|webp)$/i.test(uploadFilename) || uploadFilename.startsWith("homework-");
+    const sent = send(
+      isOlder
+        ? isPhoto
+          ? "I just took a photo of my homework. Can you help me with it?"
+          : `I just uploaded my homework (${uploadFilename}). Can you help me with it?`
+        : `Let's start with the worksheet I just uploaded — ${uploadFilename}. Where should I begin?`
+    );
+    if (sent) setUploadStage("idle");
+    return sent;
+  }, [uploadFilename, mode, send, isOlder]);
+
+  // Snapped from the chat starter → jump straight into helping once it's read.
+  // Waits for Echo to finish any reply in progress; if the send can't happen
+  // the "Help me with this" button in the chat stays up as a fallback.
+  useEffect(() => {
+    if (uploadStage !== "ready" || !autoAskAfterUploadRef.current || isLoading) return;
+    if (askAboutUpload()) autoAskAfterUploadRef.current = false;
+  }, [uploadStage, isLoading, askAboutUpload]);
 
   // Voice-augment: hands-free conversation alongside the text chat. Echo's
   // turns are spoken aloud as they stream; the kid's mic is continuously
@@ -788,6 +871,7 @@ export default function StudyHub() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       console.error(err);
+      autoAskAfterUploadRef.current = false;
       setUploadStage('error');
       alert("Upload failed: " + msg);
       setTimeout(() => setUploadStage('idle'), 4000);
@@ -805,7 +889,7 @@ export default function StudyHub() {
   const intro = INTROS[mode];
 
   return (
-    <section className="container" style={{ padding: "56px 0 96px", minHeight: "88vh", display: "flex", flexDirection: "column" }}>
+    <section className="container study-hub-page" style={{ paddingTop: chatting ? 24 : 48, paddingBottom: 48, minHeight: "88vh", display: "flex", flexDirection: "column" }}>
       {/* Header — refreshed hero zone */}
       <header className="study-hub-header">
         {/* Top meta row: eyebrow + (optional) child switcher */}
@@ -842,9 +926,14 @@ export default function StudyHub() {
           )}
         </div>
 
-        {/* Mode-aware title */}
+        {/* Mode-aware title — hidden once a chat is going so the conversation
+            gets the screen (matters on a tablet). */}
+        {!chatting && (
         <h1 className="study-hub-title">
-          {mode === "tutor" && (
+          {mode === "tutor" && isOlder && (
+            <>Stuck? <span className="serif-italic accent">Sorted.</span></>
+          )}
+          {mode === "tutor" && !isOlder && (
             <>Build, <span className="serif-italic accent">don&apos;t copy.</span></>
           )}
           {mode === "storybook" && (
@@ -857,17 +946,24 @@ export default function StudyHub() {
             <>Read it <span className="serif-italic accent">out loud.</span></>
           )}
         </h1>
+        )}
 
         {/* Mode-aware subtitle */}
-        <p className="study-hub-subtitle">{MODE_META[mode].tagline}</p>
+        {!chatting && (
+          <p className="study-hub-subtitle">
+            {mode === "tutor" && isOlder
+              ? "Homework, tests, anything from class. Echo explains it step by step — then you try one, and it checks your working."
+              : MODE_META[mode].tagline}
+          </p>
+        )}
 
         {/* Mode chooser cards */}
-        <ModeChooser mode={mode} onChange={onChooseMode} />
+        <ModeChooser mode={mode} onChange={onChooseMode} isOlder={isOlder} compact={chatting} />
 
         <style>{`
           .study-hub-header {
             position: relative;
-            padding: 12px 0 40px;
+            padding: ${chatting ? "0 0 16px" : "12px 0 40px"};
             border-bottom: 1px solid var(--border);
           }
           .study-hub-header::after {
@@ -983,8 +1079,16 @@ export default function StudyHub() {
           (same code path as a dropped PDF, same Claude extraction). */}
       <CameraCapture
         open={cameraOpen}
-        onClose={() => setCameraOpen(false)}
-        onCapture={(file) => void handleFileUpload(file)}
+        onClose={() => {
+          setCameraOpen(false);
+          // Closed without taking a photo → don't auto-ask on a later upload.
+          if (!capturedRef.current) autoAskAfterUploadRef.current = false;
+          capturedRef.current = false;
+        }}
+        onCapture={(file) => {
+          capturedRef.current = true;
+          void handleFileUpload(file);
+        }}
       />
 
       {/* Body */}
@@ -1007,14 +1111,7 @@ export default function StudyHub() {
             onPickFile={() => fileInputRef.current?.click()}
             onPickPhoto={() => setCameraOpen(true)}
             onFileChange={(f) => f && handleFileUpload(f)}
-            onAskAboutLatest={() => {
-              if (!uploadFilename) return;
-              // Switch to tutor mode if the kid is in storybook/skills/reading
-              // when they tap this — the upload only makes sense in tutor.
-              if (mode !== 'tutor') setMode('tutor');
-              send(`Let's start with the worksheet I just uploaded — ${uploadFilename}. Where should I begin?`);
-              setUploadStage('idle');
-            }}
+            onAskAboutLatest={askAboutUpload}
             library={library}
             activatingId={activatingId}
             onActivate={activateLibraryPack}
@@ -1212,11 +1309,30 @@ export default function StudyHub() {
                   />
                 </div>
                 <h2 className="chat-empty-title">
-                  {intro.title}
+                  {showOlderTutor ? OLDER_TUTOR_INTRO.title : intro.title}
                 </h2>
                 <p className="chat-empty-body">
-                  {intro.body}
+                  {showOlderTutor ? OLDER_TUTOR_INTRO.body : intro.body}
                 </p>
+                {showOlderTutor ? (
+                  <div className="chat-empty-prompts is-grid">
+                    {OLDER_TUTOR_STARTERS.map((st) => (
+                      <button
+                        key={st.label}
+                        onClick={() => runStarter(st)}
+                        disabled={isLoading}
+                        className="chat-empty-prompt"
+                        style={{ opacity: isLoading ? 0.5 : 1, cursor: isLoading ? "not-allowed" : "pointer" }}
+                      >
+                        <span className="chat-empty-prompt-arrow" style={{ color: MODE_META[mode].accent }}>›</span>
+                        <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                          <span style={{ color: "var(--ink)", fontWeight: 600 }}>{st.label}</span>
+                          {st.hint && <span style={{ fontSize: 12.5, color: "var(--ink-muted)" }}>{st.hint}</span>}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
                 <div className="chat-empty-prompts">
                   {intro.prompts.map((p) => (
                     <button
@@ -1234,6 +1350,7 @@ export default function StudyHub() {
                     </button>
                   ))}
                 </div>
+                )}
                 <style>{`
                   .chat-empty {
                     margin: auto;
@@ -1285,7 +1402,17 @@ export default function StudyHub() {
                     width: 100%;
                     max-width: 380px;
                   }
+                  .chat-empty-prompts.is-grid {
+                    max-width: 560px;
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                  }
+                  .chat-empty-prompts.is-grid > :first-child { grid-column: 1 / -1; }
+                  @media (max-width: 520px) {
+                    .chat-empty-prompts.is-grid { grid-template-columns: 1fr; }
+                  }
                   .chat-empty-prompt {
+                    min-height: 48px;
                     display: flex;
                     align-items: center;
                     gap: 10px;
@@ -1317,7 +1444,7 @@ export default function StudyHub() {
             ) : (
               messages.map((m) =>
                 m.role === "user" ? (
-                  <div key={m.id} className="bubble user">
+                  <div key={m.id} className="bubble user" style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>
                     {renderText(m)}
                   </div>
                 ) : (
@@ -1340,15 +1467,59 @@ export default function StudyHub() {
                     <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
                       {mode === "storybook" && <SceneImage state={sceneImages[m.id]} />}
                       <div className="bubble echo" style={{ maxWidth: "100%" }}>
-                        {renderText(m)}
+                        <ChatMarkdown text={renderText(m)} />
                       </div>
                     </div>
                   </div>
                 )
               )
             )}
+            {status === "submitted" && messages.length > 0 && (
+              <div className="echo-thinking" aria-live="polite">
+                <span /><span /><span />
+                <style>{`
+                  .echo-thinking { align-self: flex-start; display: flex; gap: 5px; padding: 12px 16px; margin-left: 40px; border-radius: 14px; background: rgba(78,216,235,0.07); border: 1px solid rgba(78,216,235,0.18); }
+                  .echo-thinking span { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); opacity: 0.4; animation: echoDot 1.2s infinite ease-in-out; }
+                  .echo-thinking span:nth-child(2) { animation-delay: 0.15s; }
+                  .echo-thinking span:nth-child(3) { animation-delay: 0.3s; }
+                  @keyframes echoDot { 0%, 80%, 100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+                `}</style>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
+
+          {/* Upload status inside the chat, so it's visible on a tablet
+              where the sidebar sits below the conversation. */}
+          {mode === "tutor" && uploadStage !== "idle" && (
+            <div
+              role="status"
+              style={{
+                margin: "0 16px 8px",
+                padding: "10px 14px",
+                borderRadius: 12,
+                border: `1px solid ${uploadStage === "error" ? "rgba(239,68,68,0.45)" : "var(--border-strong)"}`,
+                background: "var(--surface-2)",
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                fontSize: 14,
+                color: "var(--ink-soft)",
+              }}
+            >
+              <span style={{ flex: 1 }}>
+                {uploadStage === "uploading" && <>Uploading <strong>{uploadFilename}</strong>…</>}
+                {uploadStage === "extracting" && <>Echo is reading <strong>{uploadFilename}</strong>… (10–30s)</>}
+                {uploadStage === "ready" && <>Got it — <strong>{uploadFilename}</strong> is ready.</>}
+                {uploadStage === "error" && <>That upload didn&apos;t work. Try again?</>}
+              </span>
+              {uploadStage === "ready" && (
+                <button type="button" className="btn btn-violet" style={{ padding: "8px 14px" }} onClick={askAboutUpload}>
+                  Help me with this
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Input */}
           <div
@@ -1381,18 +1552,34 @@ export default function StudyHub() {
               }}
               style={{ position: "relative" }}
             >
-              <input
+              <textarea
+                ref={inputRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
-                type="text"
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  const el = e.currentTarget;
+                  el.style.height = "auto";
+                  el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+                }}
+                onKeyDown={(e) => {
+                  // Enter sends; Shift+Enter makes a new line (for working out, essays).
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    send(input);
+                    e.currentTarget.style.height = "auto";
+                  }
+                }}
+                rows={1}
                 disabled={isLoading || !selectedChildId}
                 className="field"
-                style={{ paddingRight: 48 }}
+                style={{ paddingRight: 48, resize: "none", minHeight: 48, maxHeight: 180, lineHeight: 1.45, fontSize: 16, display: "block" }}
                 placeholder={
                   voiceAugmentOn
                     ? "Listening… or just type."
                     : mode === "tutor"
-                    ? "Pitch your idea to Echo…"
+                    ? isOlder
+                      ? "Ask anything, paste a question, or say what your test is on…"
+                      : "Ask Echo anything…"
                     : mode === "storybook"
                     ? "What happens next?"
                     : mode === "reading"
@@ -1405,9 +1592,8 @@ export default function StudyHub() {
                 disabled={isLoading || !input.trim() || !selectedChildId}
                 style={{
                   position: "absolute",
-                  right: 6,
-                  top: "50%",
-                  transform: "translateY(-50%)",
+                  right: 8,
+                  bottom: 8,
                   padding: 8,
                   borderRadius: 8,
                   background: "var(--violet)",
@@ -1434,7 +1620,17 @@ export default function StudyHub() {
 
       <style>{`
         @media (max-width: 920px) {
-          .hub-body { grid-template-columns: 1fr !important; }
+          .hub-body { grid-template-columns: 1fr !important; margin-top: 16px !important; }
+          .study-hub-page { padding-top: ${chatting ? 16 : 24}px !important; }
+          .study-hub-title { font-size: 44px !important; }
+          .study-hub-subtitle { font-size: 15px !important; margin-top: 8px !important; }
+          .mode-chooser { margin-top: 16px !important; }
+          .study-hub-header { padding-bottom: ${chatting ? 12 : 20}px !important; }
+          .chat-empty { padding: 12px !important; }
+          .chat-empty-avatar { width: 56px !important; height: 56px !important; margin-bottom: 4px !important; }
+          .chat-empty-title { font-size: 26px !important; }
+          /* Chat first on tablets/phones — it's the thing they came for. */
+          .hub-body > .chat { order: -1; max-height: none !important; height: ${chatting ? "calc(100dvh - 280px)" : "auto"}; min-height: 480px; }
           /* On mobile the sidebar stacks above the chat. Keep it compact so
              the chat is visible without scrolling past upload + library. */
           .hub-sidebar { max-height: 320px !important; padding: 16px !important; gap: 20px !important; }
@@ -1667,10 +1863,31 @@ function ShareModal({
   );
 }
 
-function ModeChooser({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => void }) {
-  const modes: Mode[] = ["tutor", "storybook", "skills", "reading"];
+function ModeChooser({
+  mode,
+  onChange,
+  isOlder = false,
+  compact = false,
+}: {
+  mode: Mode;
+  onChange: (m: Mode) => void;
+  isOlder?: boolean;
+  compact?: boolean;
+}) {
+  // Older kids: homework/tests first, reading + AI next, stories last.
+  const modes: Mode[] = isOlder
+    ? ["tutor", "reading", "skills", "storybook"]
+    : ["tutor", "storybook", "skills", "reading"];
+  const sub = (m: Mode) =>
+    m === "tutor"
+      ? isOlder ? "Homework & tests" : "Real homework"
+      : m === "storybook"
+      ? isOlder ? "Creative writing" : "Make a story"
+      : m === "skills"
+      ? "How AI works"
+      : "Out loud";
   return (
-    <div className="mode-chooser">
+    <div className={`mode-chooser${compact ? " is-compact" : ""}`}>
       {modes.map((m) => {
         const meta = MODE_META[m];
         const active = m === mode;
@@ -1707,7 +1924,7 @@ function ModeChooser({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => vo
                 {meta.label}
               </span>
               <span className="mode-chooser-sub" style={{ color: active ? meta.accent : "var(--ink-muted)" }}>
-                {m === "tutor" ? "Real homework" : m === "storybook" ? "Make a story" : m === "skills" ? "How AI works" : "Out loud"}
+                {sub(m)}
               </span>
             </span>
           </button>
@@ -1735,6 +1952,15 @@ function ModeChooser({ mode, onChange }: { mode: Mode; onChange: (m: Mode) => vo
         }
         .mode-chooser-card:hover {
           transform: translateY(-1px);
+        }
+        .mode-chooser.is-compact { margin-top: 8px; gap: 8px; }
+        .mode-chooser.is-compact .mode-chooser-card { padding: 8px 10px; gap: 8px; }
+        .mode-chooser.is-compact .mode-chooser-icon { width: 28px; height: 28px; border-radius: 8px; }
+        .mode-chooser.is-compact .mode-chooser-sub { display: none; }
+        @media (min-width: 600px) and (max-width: 920px) {
+          .mode-chooser { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px; }
+          .mode-chooser-card { padding: 10px 12px; gap: 10px; }
+          .mode-chooser-icon { width: 32px; height: 32px; }
         }
         .mode-chooser-icon {
           width: 38px;

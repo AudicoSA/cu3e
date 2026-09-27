@@ -62,7 +62,7 @@ export async function refreshChildMemory(args: {
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
   const { data: rows } = await admin
     .from('chat_messages')
-    .select('role, content, mode, flagged')
+    .select('role, content, mode, flagged, created_at')
     .eq('child_id', child.id)
     .gte('created_at', thirtyDaysAgo)
     .order('created_at', { ascending: true });
@@ -76,20 +76,22 @@ export async function refreshChildMemory(args: {
   }
 
   const childName = child.first_name as string;
-  const transcript = (rows as Array<{ role: string; content: string; mode: string | null; flagged: boolean | null }>)
+  const transcript = (rows as Array<{ role: string; content: string; mode: string | null; flagged: boolean | null; created_at: string }>)
     .map((r) => {
+      const day = String(r.created_at ?? '').slice(0, 10);
       const who = r.role === 'user' ? childName : 'Echo';
       const tag = r.mode && r.mode !== 'tutor' ? ` [${r.mode}]` : '';
       const flag = r.flagged ? ' [flagged]' : '';
-      return `${who}${tag}${flag}: ${String(r.content).replace(/\s+/g, ' ').slice(0, 240)}`;
+      return `[${day}] ${who}${tag}${flag}: ${String(r.content).replace(/\s+/g, ' ').slice(0, 240)}`;
     })
     .join('\n');
 
+  const today = new Date().toISOString().slice(0, 10);
   const prompt = `You are building a small private "memory brief" that ${childName}'s AI tutor Echo will read silently before every future conversation. Think of it as background context — what a thoughtful tutor would QUIETLY KNOW about this kid before walking into the room.
 
 CRITICAL: this brief is OBSERVATIONS, not instructions. It tells Echo who ${childName} IS, not what to do next. Echo will use it to understand ${childName}, then let ${childName} drive the conversation fresh each time.
 
-Write 3-6 short bullets covering (in priority order, skip categories with nothing notable):
+Write 3-7 short bullets covering (in priority order, skip categories with nothing notable):
 
 1. Subjects + topics ${childName} has been working through (homework, curriculum, recurring threads). E.g. "Working through Grade 7 fractions — simplifying + finding GCD."
 
@@ -98,6 +100,8 @@ Write 3-6 short bullets covering (in priority order, skip categories with nothin
 3. Interests, in-jokes, recurring themes. E.g. "Curious about AI limits + ethics. Riffs creatively — invented 'speed bump' as a synonym for obstacle."
 
 4. Style: chatty, brief, persistent, easily-distracted, etc. E.g. "Communicative but easily distracted. Goes quiet when overwhelmed."
+
+5. Upcoming tests, exams or due dates ${childName} mentioned, with the date and subject if given. E.g. "Mentioned a Natural Sciences test on 14 October (matter and materials)." Skip anything already in the past.
 
 EXPLICITLY DO NOT WRITE:
 - "Ready to pick that thread back up..."
@@ -114,6 +118,8 @@ Rules:
 - Past-tense observations and present-tense traits only. NEVER future-tense "will pick up" or "is ready to" framing.
 - Write it AS IF Echo wrote it for itself.
 - No preamble, no headings, no markdown.
+
+TODAY: ${today}. Each chat line starts with its date — use it to turn "Friday" into a real date, and drop any test that is already past.
 
 CHATS (last 30 days; the most recent ones matter most):
 ${transcript.slice(0, 24000)}

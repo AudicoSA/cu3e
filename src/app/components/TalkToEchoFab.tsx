@@ -26,6 +26,7 @@ export default function TalkToEchoFab({ onPress, onFacePress, disabled, hidden }
         onClick={onFacePress}
         disabled={disabled}
         aria-label="See Echo face to face"
+        className="echo-fab-face"
         title="Face-to-face with Echo"
         style={{
           position: "fixed",
@@ -57,6 +58,7 @@ export default function TalkToEchoFab({ onPress, onFacePress, disabled, hidden }
       onClick={onPress}
       disabled={disabled}
       aria-label="Talk to Echo by voice"
+      className="echo-fab-main"
       style={{
         position: "fixed",
         right: 20,
@@ -123,6 +125,12 @@ export default function TalkToEchoFab({ onPress, onFacePress, disabled, hidden }
         <line x1="8" y1="23" x2="16" y2="23" />
       </svg>
       <style>{`
+        /* On tablets/phones the chat's send button sits bottom-right —
+           lift the floating buttons clear of it. */
+        @media (max-width: 920px) {
+          .echo-fab-main { bottom: 104px !important; }
+          .echo-fab-face { bottom: 180px !important; }
+        }
         @keyframes fabPulse {
           0%, 100% { transform: scale(1); opacity: 0.7; }
           50% { transform: scale(1.18); opacity: 0; }

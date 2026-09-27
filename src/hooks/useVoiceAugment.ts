@@ -145,7 +145,9 @@ export function useVoiceAugment({
       spokenSoFar.current.set(m.id, spoken + segment.length);
       if (!trimmed) continue;
 
-      const utter = new SpeechSynthesisUtterance(trimmed);
+      const speakable = toSpeech(trimmed);
+      if (!speakable) continue;
+      const utter = new SpeechSynthesisUtterance(speakable);
       utter.rate = 1.0;
       utter.pitch = 1.05;
       if (preferredVoiceRef.current) utter.voice = preferredVoiceRef.current;
@@ -306,4 +308,47 @@ export function useVoiceAugment({
   // Clear the "spoken so far" tracker whenever the conversation resets (new
   // chat id). Caller forces that by remounting the consumer — useful for
   // mode switches where messages get cleared.
+}
+
+// Echo's replies are Markdown with LaTeX maths. Turn that into something a
+// speech engine can read ("3 over 4", not "dollar backslash frac…").
+export function toSpeech(src: string): string {
+  let t = src
+    // math delimiters \( \) \[ \]
+    .replace(/\\[()[\]]/g, " ")
+    // unwrap \text{…} etc. first so fractions of units read cleanly
+    .replace(/\\(text|mathrm|mathbf|operatorname)\{([^{}]*)\}/g, "$2")
+    // degrees before powers: 90^\circ, 90^{\circ}, \degree
+    .replace(/\^\{?\\circ\}?/g, " degrees")
+    .replace(/\\degree/g, " degrees")
+    .replace(/\\%/g, " percent");
+  for (let i = 0; i < 3; i++) {
+    t = t
+      .replace(/\\d?frac\{([^{}]*)\}\{([^{}]*)\}/g, " $1 over $2 ")
+      .replace(/\\sqrt\{([^{}]*)\}/g, " the square root of $1 ");
+  }
+  t = t
+    .replace(/\^(?:\{2\}|2(?!\d))/g, " squared")
+    .replace(/\^(?:\{3\}|3(?!\d))/g, " cubed")
+    .replace(/\^\{([^{}]*)\}/g, " to the power $1")
+    .replace(/\^(\w)/g, " to the power $1")
+    .replace(/\\(times|cdot)/g, " times ")
+    .replace(/\\div/g, " divided by ")
+    .replace(/\\(leq|le)\b/g, " is less than or equal to ")
+    .replace(/\\(geq|ge)\b/g, " is greater than or equal to ")
+    .replace(/\\(neq|ne)\b/g, " is not equal to ")
+    .replace(/\\pi\b/g, " pi ")
+    .replace(/\\[a-zA-Z]+/g, " ")
+    .replace(/[{}$]/g, "");
+  // Markdown → plain
+  t = t
+    .replace(/`+/g, "")
+    .replace(/\*\*|__/g, "")
+    .replace(/(^|\s)[*_](\S)/g, "$1$2")
+    .replace(/(\S)[*_](\s|$)/g, "$1$2")
+    .replace(/^\s*#+\s*/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/\|/g, ", ")
+    .replace(/\s+/g, " ");
+  return t.trim();
 }
